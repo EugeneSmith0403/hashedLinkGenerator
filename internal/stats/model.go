@@ -1,0 +1,22 @@
+package stats
+
+import (
+	"time"
+
+	"adv/go-http/internal/models"
+
+	"gorm.io/gorm"
+)
+
+type Stats struct {
+	gorm.Model
+	LinkID uint        `json:"linkId" gorm:"index:idx_link_date,unique"`
+	Link   models.Link `gorm:"foreignKey:LinkID"`
+	Clicks int32       `json:"clicks" default:"0"`
+	Date   time.Time   `json:"date" gorm:"index:idx_link_date,unique;type:date"`
+}
+
+type StatsGroupByDate struct {
+	Clicks int32     `json:"clicks" default:"0"`
+	Date   time.Time `json:"date" gorm:"index:idx_link_date,unique;type:date"`
+}

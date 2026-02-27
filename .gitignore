@@ -1,0 +1,6 @@
+/postgres-data
+/postgres-data-test
+/.env
+/.vscode
+/.claude
+/cmd/.env.test
