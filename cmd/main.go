@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 
 	"adv/go-http/configs"
 	"adv/go-http/internal/account"
@@ -12,16 +14,16 @@ import (
 	"adv/go-http/internal/payments/payment"
 	"adv/go-http/internal/payments/plan"
 	"adv/go-http/internal/payments/stripe"
+	stripeServices "adv/go-http/internal/payments/stripe/services"
 	"adv/go-http/internal/payments/subscription"
 	"adv/go-http/internal/payments/webhook"
-	stripeGo "github.com/stripe/stripe-go/v84"
 	"adv/go-http/internal/stats"
 	"adv/go-http/internal/user"
 	"adv/go-http/pkg/db"
 	"adv/go-http/pkg/event"
 	"adv/go-http/pkg/middleware"
-	"fmt"
-	"net/http"
+
+	stripeGo "github.com/stripe/stripe-go/v84"
 )
 
 func App(config ...*configs.Config) http.Handler {
@@ -43,7 +45,7 @@ func App(config ...*configs.Config) http.Handler {
 	})
 	router := http.NewServeMux()
 
-	//Services
+	// Services
 	authService := auth.NewAuthService(userRepository)
 	jwtService := jwt.NewJWTService(jwt.JwtDeps{
 		Secret: cfg.Auth.Secret,
@@ -51,17 +53,26 @@ func App(config ...*configs.Config) http.Handler {
 	paymentRepository := payment.NewPaymentRepository(db)
 	invoiceRepository := invoice.NewInvoiceRepository(db)
 	stripeClient := stripeGo.NewClient(cfg.Stripe.ApiKey)
-	stripeService := stripe.NewStripeService(stripe.StripeDeps{
+
+	customerAccountSvc := stripeServices.NewCustomerAccountService(stripeServices.CustomerAccountServiceDeps{
+		StripeClient: stripeClient,
+	})
+	paymentSvc := stripeServices.NewPaymentService(stripeServices.PaymentServiceDeps{
 		StripeClient:      stripeClient,
 		WebhookSecret:     cfg.Stripe.WebhookSecret,
 		ReturnURL:         cfg.Stripe.ReturnURL,
 		PaymentRepository: paymentRepository,
-		InvoiceRepository: invoiceRepository,
 	})
+	invoiceSvc := invoice.NewInvoiceService(invoice.InvoiceServiceDeps{
+		StripeClient:      stripeClient,
+		InvoiceRepository: invoiceRepository,
+		PaymentRepository: paymentRepository,
+	})
+
 	accountRepository := account.NewAccountRepository(db)
 	accountService := account.NewAccountService(account.AccountServiceDeps{
 		AccountRepository: accountRepository,
-		PaymentService:    stripeService,
+		PaymentService:    customerAccountSvc,
 		UserRepository:    userRepository,
 	})
 	planRepository := plan.NewPlanRepository(db)
@@ -102,7 +113,7 @@ func App(config ...*configs.Config) http.Handler {
 	})
 
 	stripe.NewStripeHandlers(router, stripe.StripeHandlerDeps{
-		StripeService:  stripeService,
+		PaymentService: paymentSvc,
 		JWTService:     jwtService,
 		AccountService: accountService,
 		PlanRepository: planRepository,
@@ -116,8 +127,10 @@ func App(config ...*configs.Config) http.Handler {
 	})
 
 	webhook.NewWebhookHandlers(router, webhook.WebhookHandlerDeps{
-		StripeService:       stripeService,
-		SubscriptionService: subscriptionService,
+		PaymentService:         paymentSvc,
+		CustomerAccountService: customerAccountSvc,
+		InvoiceService:         invoiceSvc,
+		SubscriptionService:    subscriptionService,
 	})
 
 	// Middlewares
@@ -127,7 +140,6 @@ func App(config ...*configs.Config) http.Handler {
 	)
 
 	// Events
-
 	go statsService.AddClick()
 
 	return stack(router)

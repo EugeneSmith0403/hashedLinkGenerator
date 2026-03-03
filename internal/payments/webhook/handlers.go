@@ -4,26 +4,31 @@ import (
 	"io"
 	"net/http"
 
-	internalStripe "adv/go-http/internal/payments/stripe"
+	invoiceService "adv/go-http/internal/payments/invoice"
+	stripeServices "adv/go-http/internal/payments/stripe/services"
 	"adv/go-http/internal/payments/subscription"
 )
 
 type WebhookHandlerDeps struct {
-	StripeService       *internalStripe.StripeService
-	SubscriptionService *subscription.SubscriptionService
+	PaymentService         *stripeServices.PaymentService
+	CustomerAccountService *stripeServices.CustomerAccountService
+	InvoiceService         *invoiceService.InvoiceService
+	SubscriptionService    *subscription.SubscriptionService
 }
 
 type WebhookHandler struct {
-	stripeService  *internalStripe.StripeService
+	paymentService *stripeServices.PaymentService
 	webhookService *WebhookService
 }
 
 func NewWebhookHandlers(router *http.ServeMux, deps WebhookHandlerDeps) {
 	handler := &WebhookHandler{
-		stripeService: deps.StripeService,
+		paymentService: deps.PaymentService,
 		webhookService: NewWebhookService(WebhookServiceDeps{
-			StripeService:       deps.StripeService,
-			SubscriptionService: deps.SubscriptionService,
+			PaymentService:         deps.PaymentService,
+			CustomerAccountService: deps.CustomerAccountService,
+			InvoiceService:         deps.InvoiceService,
+			SubscriptionService:    deps.SubscriptionService,
 		}),
 	}
 
@@ -39,7 +44,7 @@ func (h *WebhookHandler) handleWebhook() http.HandlerFunc {
 		}
 
 		sigHeader := r.Header.Get("Stripe-Signature")
-		event, err := h.stripeService.DetectPaymentWebhook(payload, sigHeader)
+		event, err := h.paymentService.DetectPaymentWebhook(payload, sigHeader)
 		if err != nil {
 			http.Error(w, "invalid webhook signature", http.StatusUnauthorized)
 			return
