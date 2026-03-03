@@ -162,11 +162,6 @@ func (link *LinkHandler) GetTo() http.HandlerFunc {
 
 		result, err := link.LinkRepository.GetByHash(hash)
 
-		go link.EventBus.Publish(event.Event{
-			Type: event.LinkVisitedEVent,
-			Data: int(result.Model.ID),
-		})
-
 		if err != nil {
 			link.responsePkg.Json(&response.JsonOptions{
 				Data:   err,
@@ -176,6 +171,11 @@ func (link *LinkHandler) GetTo() http.HandlerFunc {
 			})
 			return
 		}
+
+		go link.EventBus.Publish(event.Event{
+			Type: event.LinkVisitedEVent,
+			Data: int(result.Model.ID),
+		})
 
 		http.Redirect(w, req, result.Url, http.StatusTemporaryRedirect)
 	}
