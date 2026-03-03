@@ -61,6 +61,15 @@ func (r LinkRepository) GetByHash(hash string) (*models.Link, error) {
 
 }
 
+func (r *LinkRepository) GetByUserID(userID uint) ([]*models.Link, error) {
+	var links []*models.Link
+	result := r.db.DB.Where("user_id = ?", userID).Find(&links)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return links, nil
+}
+
 func (r *LinkRepository) getById(id uint) (*models.Link, error) {
 	var link models.Link
 	result := r.db.DB.First(&link, id)

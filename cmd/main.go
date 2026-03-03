@@ -84,6 +84,7 @@ func App(config ...*configs.Config) http.Handler {
 	link.NewLinkHandler(router, link.LinkHandlerDeps{
 		Config:         cfg,
 		LinkRepository: linkRepository,
+		UserRepository: userRepository,
 		JWTService:     jwtService,
 		EventBus:       eventBus,
 	})
