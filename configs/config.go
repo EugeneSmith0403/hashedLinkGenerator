@@ -8,8 +8,15 @@ import (
 )
 
 type Config struct {
-	Db   DbConfig
-	Auth AuthConfig
+	Db     DbConfig
+	Auth   AuthConfig
+	Stripe StripeConfig
+}
+
+type StripeConfig struct {
+	ApiKey        string
+	WebhookSecret string
+	ReturnURL     string
 }
 
 type DbConfig struct {
@@ -36,9 +43,13 @@ func LoadConfig(envFiles ...string) *Config {
 		Db: DbConfig{
 			Dsn: os.Getenv("DSN"),
 		},
-
 		Auth: AuthConfig{
 			Secret: os.Getenv("TOKEN"),
+		},
+		Stripe: StripeConfig{
+			ApiKey:        os.Getenv("STRIPE_TOKEN"),
+			WebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
+			ReturnURL:     os.Getenv("STRIPE_RETURN_URL"),
 		},
 	}
 }

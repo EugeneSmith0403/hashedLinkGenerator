@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Add Card</title>
+  <script src="https://js.stripe.com/v3/"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 40px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    }
+
+    h1 { font-size: 22px; color: #1a1a2e; margin-bottom: 28px; }
+
+    .field { margin-bottom: 20px; }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .input-row { display: flex; gap: 8px; }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1.5px solid #ddd;
+      border-radius: 8px;
+      font-size: 14px;
+      color: #1a1a2e;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input[type="text"]:focus { border-color: #635bff; }
+
+    .btn-load {
+      padding: 11px 16px;
+      background: #635bff;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s;
+    }
+    .btn-load:hover { background: #4e47d1; }
+
+    .stripe-element-wrapper {
+      padding: 11px 14px;
+      border: 1.5px solid #ddd;
+      border-radius: 8px;
+      transition: border-color 0.2s;
+      min-height: 42px;
+    }
+    .stripe-element-wrapper.focused { border-color: #635bff; }
+
+    .card-placeholder {
+      font-size: 13px;
+      color: #aaa;
+      line-height: 20px;
+    }
+
+    #card-section { display: none; }
+
+    button#submit-btn {
+      width: 100%;
+      padding: 13px;
+      background: #635bff;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.2s;
+    }
+    button#submit-btn:hover:not(:disabled) { background: #4e47d1; }
+    button#submit-btn:disabled { background: #a0a0c0; cursor: not-allowed; }
+
+    #message {
+      margin-top: 18px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+    }
+    #message.success { background: #e6f9f0; color: #1a7a4a; display: block; }
+    #message.error   { background: #fff0f0; color: #c0392b; display: block; }
+
+    .hint { font-size: 12px; color: #999; margin-top: 5px; }
+    .divider { border: none; border-top: 1px solid #eee; margin: 24px 0; }
+
+    .status-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #ccc;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .status-dot.ready { background: #2ecc71; }
+    .status-label { font-size: 12px; color: #888; vertical-align: middle; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Add Payment Card</h1>
+
+    <div class="field">
+      <label>Stripe Publishable Key</label>
+      <div class="input-row">
+        <input type="text" id="pubKey" placeholder="pk_test_..." />
+        <button class="btn-load" onclick="initStripe()">Load</button>
+      </div>
+      <div class="hint">
+        <span class="status-dot" id="status-dot"></span>
+        <span class="status-label" id="status-label">Not initialized</span>
+      </div>
+    </div>
+
+    <div id="card-section">
+      <div class="field">
+        <label>Client Secret</label>
+        <input type="text" id="clientSecret" placeholder="pi_... or seti_..." />
+        <div class="hint">From POST /subscriptions/method or /stripe/paymentIntent</div>
+      </div>
+
+      <hr class="divider" />
+
+      <div class="field">
+        <label>Card Details</label>
+        <div class="stripe-element-wrapper" id="card-wrapper">
+          <div id="card-element"></div>
+        </div>
+      </div>
+
+      <button id="submit-btn" onclick="handleSubmit()">Confirm Card</button>
+    </div>
+
+    <div id="message"></div>
+  </div>
+
+  <script>
+    let stripe = null;
+    let cardElement = null;
+
+    function initStripe() {
+      const pubKey = document.getElementById('pubKey').value.trim();
+
+      if (!pubKey.startsWith('pk_')) {
+        showMessage('error', 'Publishable Key должен начинаться с pk_test_ или pk_live_');
+        return;
+      }
+
+      // Destroy previous element if re-initializing
+      if (cardElement) {
+        cardElement.destroy();
+        cardElement = null;
+      }
+
+      stripe = Stripe(pubKey);
+      const elements = stripe.elements();
+
+      cardElement = elements.create('card', {
+        style: {
+          base: {
+            fontSize: '15px',
+            color: '#1a1a2e',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            '::placeholder': { color: '#aab' },
+          },
+          invalid: { color: '#e74c3c' },
+        }
+      });
+
+      cardElement.mount('#card-element');
+
+      cardElement.on('focus', () => document.getElementById('card-wrapper').classList.add('focused'));
+      cardElement.on('blur',  () => document.getElementById('card-wrapper').classList.remove('focused'));
+
+      // Show card section
+      document.getElementById('card-section').style.display = 'block';
+      document.getElementById('status-dot').classList.add('ready');
+      document.getElementById('status-label').textContent = 'Stripe initialized';
+
+      showMessage('success', 'Stripe загружен — введите данные карты');
+      setTimeout(() => document.getElementById('message').style.display = 'none', 2000);
+    }
+
+    async function handleSubmit() {
+      const clientSecret = document.getElementById('clientSecret').value.trim();
+
+      if (!clientSecret) return showMessage('error', 'Введи Client Secret');
+      if (!stripe || !cardElement) return showMessage('error', 'Сначала нажми Load');
+
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+      btn.textContent = 'Processing...';
+
+      try {
+        let result;
+
+        if (clientSecret.startsWith('seti_')) {
+          result = await stripe.confirmCardSetup(clientSecret, {
+            payment_method: { card: cardElement }
+          });
+        } else {
+          result = await stripe.confirmCardPayment(clientSecret, {
+            payment_method: { card: cardElement }
+          });
+        }
+
+        if (result.error) {
+          showMessage('error', result.error.message);
+        } else {
+          const intent = result.paymentIntent || result.setupIntent;
+          showMessage('success', `Success! Status: ${intent.status}`);
+        }
+      } catch (e) {
+        showMessage('error', e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Confirm Card';
+      }
+    }
+
+    function showMessage(type, text) {
+      const el = document.getElementById('message');
+      el.className = type;
+      el.textContent = text;
+    }
+  </script>
+</body>
+</html>

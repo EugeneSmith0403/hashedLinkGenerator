@@ -4,3 +4,11 @@
 /.vscode
 /.claude
 /cmd/.env.test
+/frontend/node_modules/
+/frontend/dist/
+/frontend/.env
+/frontend/.env.local
+/frontend/.env.*.local
+/.claude
+/cmd/gen_webhook_sig
+/cmd/gen_webhook_sig/main.go
