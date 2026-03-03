@@ -6,26 +6,33 @@ import (
 	"log"
 	"strconv"
 
-	internalStripe "adv/go-http/internal/payments/stripe"
+	invoiceService "adv/go-http/internal/payments/invoice"
+	stripeServices "adv/go-http/internal/payments/stripe/services"
 	"adv/go-http/internal/payments/subscription"
 
 	stripeGo "github.com/stripe/stripe-go/v84"
 )
 
 type WebhookServiceDeps struct {
-	StripeService       *internalStripe.StripeService
-	SubscriptionService *subscription.SubscriptionService
+	PaymentService         *stripeServices.PaymentService
+	CustomerAccountService *stripeServices.CustomerAccountService
+	InvoiceService         *invoiceService.InvoiceService
+	SubscriptionService    *subscription.SubscriptionService
 }
 
 type WebhookService struct {
-	stripeService       *internalStripe.StripeService
-	subscriptionService *subscription.SubscriptionService
+	paymentService         *stripeServices.PaymentService
+	customerAccountService *stripeServices.CustomerAccountService
+	invoiceService         *invoiceService.InvoiceService
+	subscriptionService    *subscription.SubscriptionService
 }
 
 func NewWebhookService(deps WebhookServiceDeps) *WebhookService {
 	return &WebhookService{
-		stripeService:       deps.StripeService,
-		subscriptionService: deps.SubscriptionService,
+		paymentService:         deps.PaymentService,
+		customerAccountService: deps.CustomerAccountService,
+		invoiceService:         deps.InvoiceService,
+		subscriptionService:    deps.SubscriptionService,
 	}
 }
 
@@ -57,7 +64,7 @@ func (s *WebhookService) HandleSetupIntentEvent(event *stripeGo.Event) error {
 		return nil
 	}
 	log.Printf("[stripe] setup_intent.succeeded: customer=%s pm=%s\n", si.Customer.ID, si.PaymentMethod.ID)
-	return s.stripeService.SetDefaultPaymentMethod(si.Customer.ID, si.PaymentMethod.ID)
+	return s.customerAccountService.SetDefaultPaymentMethod(si.Customer.ID, si.PaymentMethod.ID)
 }
 
 func (s *WebhookService) IsSubscriptionEvent(t stripeGo.EventType) bool {
@@ -93,13 +100,13 @@ func (s *WebhookService) HandlePaymentIntentEvent(event *stripeGo.Event) error {
 			// subscription-generated PI — handled by invoice.payment_succeeded
 			break
 		}
-		updatedPi, err := s.stripeService.UpdatePaymentFromIntent(&pi)
+		updatedPi, err := s.paymentService.UpdatePaymentFromIntent(&pi)
 		if err != nil {
 			log.Printf("[stripe] failed to update payment for payment_intent %s: %v\n", pi.ID, err)
 			break
 		}
 		// TODO send to invoice queue
-		if err := s.stripeService.CreateInvoiceForPayment(updatedPi); err != nil {
+		if err := s.invoiceService.CreateInvoiceForPayment(updatedPi); err != nil {
 			log.Printf("[stripe] failed to create invoice for payment_intent %s: %v\n", pi.ID, err)
 		}
 
@@ -109,7 +116,7 @@ func (s *WebhookService) HandlePaymentIntentEvent(event *stripeGo.Event) error {
 			reason = pi.LastPaymentError.Msg
 		}
 		log.Printf("[stripe] payment_intent.payment_failed: id=%s reason=%s\n", pi.ID, reason)
-		if _, err := s.stripeService.UpdatePaymentFromIntent(&pi); err != nil {
+		if _, err := s.paymentService.UpdatePaymentFromIntent(&pi); err != nil {
 			return err
 		}
 
@@ -159,7 +166,7 @@ func (s *WebhookService) HandleInvoiceEvent(event *stripeGo.Event) error {
 			}
 		}
 
-		if err := s.stripeService.CreatePaymentAndInvoiceFromStripeInvoice(&inv, accountID, subscriptionID); err != nil {
+		if err := s.invoiceService.CreatePaymentAndInvoiceFromStripeInvoice(&inv, accountID, subscriptionID); err != nil {
 			log.Printf("[stripe] failed to create payment/invoice for invoice %s: %v\n", inv.ID, err)
 		}
 	}
@@ -201,7 +208,7 @@ func (s *WebhookService) HandleSubscriptionEvent(event *stripeGo.Event) error {
 		}
 
 		if sub.LatestInvoice != nil && sub.LatestInvoice.ID != "" {
-			if err := s.stripeService.CreateInitialInvoice(sub.LatestInvoice.ID, localSub.UserID, localSub.ID); err != nil {
+			if err := s.invoiceService.CreateInitialInvoice(sub.LatestInvoice.ID, localSub.UserID, localSub.ID); err != nil {
 				log.Printf("[stripe] subscription.created: failed to create initial invoice for %s: %v\n", sub.ID, err)
 			}
 		}

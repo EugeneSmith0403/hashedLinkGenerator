@@ -15,13 +15,13 @@ var (
 
 type AccountServiceDeps struct {
 	AccountRepository *AccountRepository
-	PaymentService    payments.IPaymentService
+	PaymentService    payments.ICustomerAccountService
 	UserRepository    *user.UserRepository
 }
 
 type AccountService struct {
 	AccountRepository *AccountRepository
-	PaymentService    payments.IPaymentService
+	PaymentService    payments.ICustomerAccountService
 	UserRepository    *user.UserRepository
 }
 

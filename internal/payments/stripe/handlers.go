@@ -7,6 +7,7 @@ import (
 	"adv/go-http/internal/account"
 	internalJWT "adv/go-http/internal/jwt"
 	"adv/go-http/internal/payments/plan"
+	stripeServices "adv/go-http/internal/payments/stripe/services"
 	errorType "adv/go-http/pkg/errorType"
 	"adv/go-http/pkg/middleware"
 	"adv/go-http/pkg/request"
@@ -16,14 +17,14 @@ import (
 )
 
 type StripeHandlerDeps struct {
-	StripeService  *StripeService
+	PaymentService *stripeServices.PaymentService
 	JWTService     *internalJWT.JWTService
 	AccountService *account.AccountService
 	PlanRepository *plan.PlanRepository
 }
 
 type StripeHandler struct {
-	stripeService  *StripeService
+	paymentService *stripeServices.PaymentService
 	responsePkg    response.Response
 	accountService *account.AccountService
 	planRepository *plan.PlanRepository
@@ -31,7 +32,7 @@ type StripeHandler struct {
 
 func NewStripeHandlers(router *http.ServeMux, deps StripeHandlerDeps) {
 	handler := &StripeHandler{
-		stripeService: deps.StripeService,
+		paymentService: deps.PaymentService,
 		responsePkg: *response.NewResponse(&response.ResponseOptions{
 			HeadersMap: map[string]string{"Content-Type": "application/json"},
 		}),
@@ -100,7 +101,7 @@ func (h *StripeHandler) handlePaymentIntent() http.HandlerFunc {
 			return
 		}
 
-		pi, piErr := h.stripeService.CreatePaymentIntent(
+		pi, piErr := h.paymentService.CreatePaymentIntent(
 			foundAccount.ID,
 			foundAccount.CustomerID,
 			body.CardType,
@@ -163,7 +164,7 @@ func (h *StripeHandler) handleConfirm() http.HandlerFunc {
 			return
 		}
 
-		confirmedResponse, confirmErr := h.stripeService.ConfirmPaymentIntent(body.PaymentId)
+		confirmedResponse, confirmErr := h.paymentService.ConfirmPaymentIntent(body.PaymentId)
 		if confirmErr != nil {
 			h.responsePkg.Json(&response.JsonOptions{
 				Data:   errorType.ErrorType{Error: stripeErrMsg(confirmErr)},
@@ -182,4 +183,3 @@ func (h *StripeHandler) handleConfirm() http.HandlerFunc {
 		})
 	}
 }
-

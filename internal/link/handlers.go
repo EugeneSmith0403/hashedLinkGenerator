@@ -4,6 +4,7 @@ import (
 	"adv/go-http/configs"
 	"adv/go-http/internal/jwt"
 	"adv/go-http/internal/models"
+	"adv/go-http/internal/user"
 	"adv/go-http/pkg/event"
 	"adv/go-http/pkg/middleware"
 	"adv/go-http/pkg/request"
@@ -18,6 +19,7 @@ import (
 type LinkHandlerDeps struct {
 	*configs.Config
 	LinkRepository *LinkRepository
+	UserRepository *user.UserRepository
 	JWTService     *jwt.JWTService
 	EventBus       *event.EventBus
 }
@@ -26,6 +28,7 @@ type LinkHandler struct {
 	*configs.Config
 	responsePkg    response.Response
 	LinkRepository *LinkRepository
+	UserRepository *user.UserRepository
 	EventBus       *event.EventBus
 }
 
@@ -41,6 +44,7 @@ func NewLinkHandler(router *http.ServeMux, deps LinkHandlerDeps) {
 		Config:         deps.Config,
 		responsePkg:    *response.NewResponse(options),
 		LinkRepository: deps.LinkRepository,
+		UserRepository: deps.UserRepository,
 		EventBus:       deps.EventBus,
 	}
 
@@ -69,7 +73,19 @@ func (link *LinkHandler) Create() http.HandlerFunc {
 			return
 		}
 
-		createdLink := models.NewLink(body.Url)
+		email := req.Context().Value(middleware.ContextEmailKey).(string)
+		currentUser, err := link.UserRepository.FindByEmail(email)
+		if err != nil || currentUser == nil {
+			link.responsePkg.Json(&response.JsonOptions{
+				Data:   "user not found",
+				Code:   http.StatusUnauthorized,
+				Writer: w,
+				Reader: req,
+			})
+			return
+		}
+
+		createdLink := models.NewLink(body.Url, currentUser.ID)
 
 		result, errLink := link.LinkRepository.Create(createdLink)
 
