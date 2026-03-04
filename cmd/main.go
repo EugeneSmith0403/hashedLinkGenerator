@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"adv/go-http/configs"
 	"adv/go-http/internal/account"
@@ -23,16 +26,22 @@ import (
 	"adv/go-http/pkg/event"
 	"adv/go-http/pkg/middleware"
 
+	"github.com/braintree/manners"
 	stripeGo "github.com/stripe/stripe-go/v84"
 )
 
-func App(config ...*configs.Config) http.Handler {
+func loadConfigs(config ...*configs.Config) *configs.Config {
 	var cfg *configs.Config
 	if len(config) > 0 {
 		cfg = config[0]
 	} else {
 		cfg = configs.LoadConfig()
 	}
+
+	return cfg
+}
+
+func App(cfg *configs.Config) http.Handler {
 	db := db.NewDb(cfg)
 
 	linkRepository := link.NewLinkRepository(db)
@@ -146,12 +155,26 @@ func App(config ...*configs.Config) http.Handler {
 }
 
 func main() {
+	configs := loadConfigs()
 
-	server := http.Server{
+	server := manners.NewWithServer(&http.Server{
 		Addr:    ":8081",
-		Handler: App(),
+		Handler: App(configs),
+	})
+
+	if configs.Mode == "production" {
+		// Smooth shutdown
+		go func() {
+			sigchan := make(chan os.Signal, 1)
+			signal.Notify(sigchan, os.Interrupt, syscall.SIGTERM)
+			<-sigchan
+			log.Print("Shutting down...")
+			manners.Close()
+		}()
 	}
 
-	fmt.Println("listening 8081")
-	server.ListenAndServe()
+	log.Print("listening 8081")
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatalf("server error: %v", err)
+	}
 }

@@ -8,12 +8,14 @@ import (
 )
 
 type Config struct {
+	Mode   string
 	Db     DbConfig
 	Auth   AuthConfig
 	Stripe StripeConfig
 }
 
 type StripeConfig struct {
+	Mode          string
 	ApiKey        string
 	WebhookSecret string
 	ReturnURL     string
@@ -47,6 +49,7 @@ func LoadConfig(envFiles ...string) *Config {
 			Secret: os.Getenv("TOKEN"),
 		},
 		Stripe: StripeConfig{
+			Mode:          os.Getenv("MODE"),
 			ApiKey:        os.Getenv("STRIPE_TOKEN"),
 			WebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 			ReturnURL:     os.Getenv("STRIPE_RETURN_URL"),
