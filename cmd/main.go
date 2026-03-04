@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"strconv"
+	"syscall"
 
 	"adv/go-http/configs"
 	"adv/go-http/internal/account"
@@ -21,34 +25,54 @@ import (
 	"adv/go-http/internal/user"
 	"adv/go-http/pkg/db"
 	"adv/go-http/pkg/event"
+	"adv/go-http/pkg/helpers"
 	"adv/go-http/pkg/middleware"
+	pkgRedis "adv/go-http/pkg/redis"
 
+	"github.com/braintree/manners"
+	goRedis "github.com/go-redis/redis/v8"
 	stripeGo "github.com/stripe/stripe-go/v84"
 )
 
-func App(config ...*configs.Config) http.Handler {
+func loadConfigs(config ...*configs.Config) *configs.Config {
 	var cfg *configs.Config
 	if len(config) > 0 {
 		cfg = config[0]
 	} else {
 		cfg = configs.LoadConfig()
 	}
+
+	return cfg
+}
+
+func App(cfg *configs.Config) http.Handler {
 	db := db.NewDb(cfg)
 
 	linkRepository := link.NewLinkRepository(db)
 	userRepository := user.NewUserRepository(db)
 	statsRepository := stats.NewStatsRepository(db)
 	eventBus := event.NewEventBus()
+
+	// Redis
+	cacheMinutes, _ := strconv.Atoi(cfg.Redis.Cache)
+	redisClient := pkgRedis.NewRedis(&goRedis.Options{
+		Addr:     cfg.Redis.Addr,
+		Username: cfg.Redis.Username,
+		Password: cfg.Redis.Password,
+	}, helpers.ToMinutes(cacheMinutes))
+
 	statsService := stats.NewStatsService(&stats.StatServiceDep{
 		EventBus:        eventBus,
 		StatsRepository: statsRepository,
+		RedisSrvice:     redisClient,
 	})
 	router := http.NewServeMux()
 
 	// Services
 	authService := auth.NewAuthService(userRepository)
 	jwtService := jwt.NewJWTService(jwt.JwtDeps{
-		Secret: cfg.Auth.Secret,
+		Secret:      cfg.Auth.Secret,
+		RedisSrvice: redisClient,
 	})
 	paymentRepository := payment.NewPaymentRepository(db)
 	invoiceRepository := invoice.NewInvoiceRepository(db)
@@ -91,6 +115,7 @@ func App(config ...*configs.Config) http.Handler {
 		Config:      cfg,
 		AuthService: authService,
 		JWTService:  jwtService,
+		RedisSrvice: redisClient,
 	})
 	link.NewLinkHandler(router, link.LinkHandlerDeps{
 		Config:         cfg,
@@ -104,6 +129,7 @@ func App(config ...*configs.Config) http.Handler {
 		Config:          cfg,
 		JWTService:      jwtService,
 		StatsRepository: statsRepository,
+		StatsService:    statsService,
 	})
 
 	account.NewAccountHandler(router, account.AccountHandlerDeps{
@@ -146,12 +172,26 @@ func App(config ...*configs.Config) http.Handler {
 }
 
 func main() {
+	configs := loadConfigs()
 
-	server := http.Server{
+	server := manners.NewWithServer(&http.Server{
 		Addr:    ":8081",
-		Handler: App(),
+		Handler: App(configs),
+	})
+
+	if configs.Mode == "production" {
+		// Smooth shutdown
+		go func() {
+			sigchan := make(chan os.Signal, 1)
+			signal.Notify(sigchan, os.Interrupt, syscall.SIGTERM)
+			<-sigchan
+			log.Print("Shutting down...")
+			manners.Close()
+		}()
 	}
 
-	fmt.Println("listening 8081")
-	server.ListenAndServe()
+	log.Print("listening 8081")
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatalf("server error: %v", err)
+	}
 }

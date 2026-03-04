@@ -1,6 +1,7 @@
 package jwt
 
 import (
+	"adv/go-http/pkg/redis"
 	"fmt"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -11,11 +12,13 @@ type JwtData struct {
 }
 
 type JwtDeps struct {
-	Secret string
+	Secret      string
+	RedisSrvice *redis.Redis
 }
 
 type JWTService struct {
 	*JwtDeps
+	redisSrvice *redis.Redis
 }
 
 func NewJWTService(deps JwtDeps) *JWTService {
@@ -23,6 +26,7 @@ func NewJWTService(deps JwtDeps) *JWTService {
 		JwtDeps: &JwtDeps{
 			Secret: deps.Secret,
 		},
+		redisSrvice: deps.RedisSrvice,
 	}
 }
 
@@ -38,6 +42,15 @@ func (service JWTService) GenerateToken(claims *jwt.MapClaims) (string, error) {
 }
 
 func (service *JWTService) CheckToken(token string, claims *jwt.MapClaims) (*jwt.MapClaims, error) {
+	key := fmt.Sprintf("token:%s", token)
+	userEmail := service.redisSrvice.Get(key, "")
+
+	if userEmail != "" {
+		return &jwt.MapClaims{
+			"email": userEmail,
+		}, nil
+	}
+
 	parsedToken, err := jwt.ParseWithClaims(token, claims, func(t *jwt.Token) (interface{}, error) {
 		return []byte(service.Secret), nil
 	})
