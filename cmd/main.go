@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"adv/go-http/configs"
@@ -24,9 +25,12 @@ import (
 	"adv/go-http/internal/user"
 	"adv/go-http/pkg/db"
 	"adv/go-http/pkg/event"
+	"adv/go-http/pkg/helpers"
 	"adv/go-http/pkg/middleware"
+	pkgRedis "adv/go-http/pkg/redis"
 
 	"github.com/braintree/manners"
+	goRedis "github.com/go-redis/redis/v8"
 	stripeGo "github.com/stripe/stripe-go/v84"
 )
 
@@ -48,16 +52,27 @@ func App(cfg *configs.Config) http.Handler {
 	userRepository := user.NewUserRepository(db)
 	statsRepository := stats.NewStatsRepository(db)
 	eventBus := event.NewEventBus()
+
+	// Redis
+	cacheMinutes, _ := strconv.Atoi(cfg.Redis.Cache)
+	redisClient := pkgRedis.NewRedis(&goRedis.Options{
+		Addr:     cfg.Redis.Addr,
+		Username: cfg.Redis.Username,
+		Password: cfg.Redis.Password,
+	}, helpers.ToMinutes(cacheMinutes))
+
 	statsService := stats.NewStatsService(&stats.StatServiceDep{
 		EventBus:        eventBus,
 		StatsRepository: statsRepository,
+		RedisSrvice:     redisClient,
 	})
 	router := http.NewServeMux()
 
 	// Services
 	authService := auth.NewAuthService(userRepository)
 	jwtService := jwt.NewJWTService(jwt.JwtDeps{
-		Secret: cfg.Auth.Secret,
+		Secret:      cfg.Auth.Secret,
+		RedisSrvice: redisClient,
 	})
 	paymentRepository := payment.NewPaymentRepository(db)
 	invoiceRepository := invoice.NewInvoiceRepository(db)
@@ -100,6 +115,7 @@ func App(cfg *configs.Config) http.Handler {
 		Config:      cfg,
 		AuthService: authService,
 		JWTService:  jwtService,
+		RedisSrvice: redisClient,
 	})
 	link.NewLinkHandler(router, link.LinkHandlerDeps{
 		Config:         cfg,
@@ -113,6 +129,7 @@ func App(cfg *configs.Config) http.Handler {
 		Config:          cfg,
 		JWTService:      jwtService,
 		StatsRepository: statsRepository,
+		StatsService:    statsService,
 	})
 
 	account.NewAccountHandler(router, account.AccountHandlerDeps{

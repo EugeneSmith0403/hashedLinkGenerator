@@ -1,5 +1,7 @@
 /postgres-data
 /postgres-data-test
+/redis-data
+/redisdata
 /.env
 /.vscode
 /.claude

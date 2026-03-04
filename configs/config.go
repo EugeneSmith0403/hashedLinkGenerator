@@ -12,6 +12,14 @@ type Config struct {
 	Db     DbConfig
 	Auth   AuthConfig
 	Stripe StripeConfig
+	Redis  Redis
+}
+
+type Redis struct {
+	Addr     string
+	Username string
+	Password string
+	Cache    string
 }
 
 type StripeConfig struct {
@@ -26,7 +34,8 @@ type DbConfig struct {
 }
 
 type AuthConfig struct {
-	Secret string
+	Secret    string
+	ExpiredAt string
 }
 
 func LoadConfig(envFiles ...string) *Config {
@@ -46,13 +55,20 @@ func LoadConfig(envFiles ...string) *Config {
 			Dsn: os.Getenv("DSN"),
 		},
 		Auth: AuthConfig{
-			Secret: os.Getenv("TOKEN"),
+			Secret:    os.Getenv("TOKEN"),
+			ExpiredAt: os.Getenv("EXPIRED_AT"),
 		},
 		Stripe: StripeConfig{
 			Mode:          os.Getenv("MODE"),
 			ApiKey:        os.Getenv("STRIPE_TOKEN"),
 			WebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 			ReturnURL:     os.Getenv("STRIPE_RETURN_URL"),
+		},
+		Redis: Redis{
+			Addr:     os.Getenv("REDIS_ADDR"),
+			Username: os.Getenv("REDIS_USER"),
+			Password: os.Getenv("REDIS_USER_PASSWORD"),
+			Cache:    os.Getenv("REDIS_CACHE"),
 		},
 	}
 }

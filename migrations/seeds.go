@@ -48,9 +48,10 @@ func seedPlans(db *gorm.DB, stripeClient *stripeGo.Client) {
 
 	for _, p := range plans {
 		var existing plan.Plan
-		if err := db.Where("name = ?", p.Name).First(&existing).Error; err != nil {
-			db.Create(&p)
-			existing = p
+		result := db.Where(plan.Plan{Name: p.Name}).FirstOrCreate(&existing, p)
+		if result.Error != nil {
+			fmt.Printf("failed to find or create plan %s: %v\n", p.Name, result.Error)
+			continue
 		}
 
 		if existing.StripePriceID != "" {

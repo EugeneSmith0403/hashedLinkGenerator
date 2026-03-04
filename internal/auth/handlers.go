@@ -4,9 +4,13 @@ import (
 	"adv/go-http/configs"
 	internalJWT "adv/go-http/internal/jwt"
 	errorType "adv/go-http/pkg/errorType"
+	"adv/go-http/pkg/helpers"
+	"adv/go-http/pkg/redis"
 	"adv/go-http/pkg/request"
 	"adv/go-http/pkg/response"
+	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -16,6 +20,7 @@ type AuthHandlerDeps struct {
 	*configs.Config
 	AuthService *AuthService
 	JWTService  *internalJWT.JWTService
+	RedisSrvice *redis.Redis
 }
 
 type AuthHandler struct {
@@ -23,6 +28,7 @@ type AuthHandler struct {
 	responsePkg response.Response
 	AuthService *AuthService
 	JWTService  *internalJWT.JWTService
+	RedisSrvice *redis.Redis
 }
 
 func NewAuthHandlers(router *http.ServeMux, deps AuthHandlerDeps) {
@@ -39,6 +45,7 @@ func NewAuthHandlers(router *http.ServeMux, deps AuthHandlerDeps) {
 		responsePkg: *response.NewResponse(options),
 		AuthService: deps.AuthService,
 		JWTService:  deps.JWTService,
+		RedisSrvice: deps.RedisSrvice,
 	}
 	router.HandleFunc("POST /auth/login", handler.Login())
 	router.HandleFunc("POST /auth/register", handler.Register())
@@ -71,10 +78,28 @@ func (auth *AuthHandler) Login() http.HandlerFunc {
 			})
 			return
 		}
+		now := time.Now()
+		expiredHours, expiredHoursErr := strconv.Atoi(auth.Config.Auth.ExpiredAt)
+
+		if err != nil {
+			auth.responsePkg.Json(&response.JsonOptions{
+				Data: errorType.ErrorType{
+					Error: expiredHoursErr.Error(),
+				},
+				Writer: w,
+				Reader: req,
+				Code:   http.StatusInternalServerError,
+			})
+			return
+		}
+
+		expirationTime := now.Add(helpers.ToHours(expiredHours)).Unix()
 
 		claims := jwt.MapClaims{
 			"email":     body.Email,
-			"timestamp": time.Now(),
+			"createdAt": now,
+			"exp":       expirationTime,
+			"iat":       now.Unix(),
 		}
 
 		token, tokenErr := auth.JWTService.GenerateToken(&claims)
@@ -95,6 +120,10 @@ func (auth *AuthHandler) Login() http.HandlerFunc {
 			Token: token,
 			Email: body.Email,
 		}
+
+		userKey := fmt.Sprintf("token:%s", body.Email)
+
+		auth.RedisSrvice.Set(userKey, true, time.Duration(expirationTime))
 
 		auth.responsePkg.Json(&response.JsonOptions{
 			Data:   res,

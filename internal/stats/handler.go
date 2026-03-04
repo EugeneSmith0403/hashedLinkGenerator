@@ -13,12 +13,14 @@ type StatsHandlerDeps struct {
 	*configs.Config
 	JWTService      *jwt.JWTService
 	StatsRepository *StatsRepository
+	StatsService    *StatsService
 }
 
 type StatsHandler struct {
 	*configs.Config
 	responsePkg     response.Response
 	StatsRepository *StatsRepository
+	statsService    *StatsService
 }
 
 func NewStatsHandler(router *http.ServeMux, deps StatsHandlerDeps) {
@@ -33,6 +35,7 @@ func NewStatsHandler(router *http.ServeMux, deps StatsHandlerDeps) {
 		Config:          deps.Config,
 		responsePkg:     *response.NewResponse(options),
 		StatsRepository: deps.StatsRepository,
+		statsService:    deps.StatsService,
 	}
 
 	// Middlewares
@@ -48,6 +51,18 @@ func (stats *StatsHandler) getStats() http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 
 		queries := parsedTimeQuery([]string{"from", "to"}, req)
+
+		cachedStats, _ := GetCachedStat[[]Stats](stats.statsService, queries)
+
+		if cachedStats != nil {
+			stats.responsePkg.Json(&response.JsonOptions{
+				Data:   cachedStats,
+				Code:   http.StatusOK,
+				Writer: w,
+				Reader: req,
+			})
+			return
+		}
 
 		result, err := stats.StatsRepository.GetStats(&StatsQuery{from: queries["from"], to: queries["to"]})
 
@@ -75,6 +90,18 @@ func (stats *StatsHandler) getGroupedStatsByDate() http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		queries := parsedTimeQuery([]string{"from", "to"}, req)
 
+		cachedStats, _ := GetCachedStat[[]StatsGroupByDate](stats.statsService, queries)
+
+		if cachedStats != nil {
+			stats.responsePkg.Json(&response.JsonOptions{
+				Data:   cachedStats,
+				Code:   http.StatusOK,
+				Writer: w,
+				Reader: req,
+			})
+			return
+		}
+
 		result, err := stats.StatsRepository.GetStatsGroupByDate(&StatsQuery{from: queries["from"], to: queries["to"]})
 
 		if err != nil {
@@ -86,6 +113,8 @@ func (stats *StatsHandler) getGroupedStatsByDate() http.HandlerFunc {
 			})
 			return
 		}
+
+		SetCachedStat(stats.statsService, result, queries)
 
 		stats.responsePkg.Json(&response.JsonOptions{
 			Data:   result,
