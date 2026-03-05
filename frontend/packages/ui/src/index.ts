@@ -1,0 +1,8 @@
+export { default as UiButton } from './components/UiButton/UiButton.vue'
+export { default as UiInput } from './components/UiInput/UiInput.vue'
+export { default as UiBadge } from './components/UiBadge/UiBadge.vue'
+export { default as UiCard } from './components/UiCard/UiCard.vue'
+export { default as UiModal } from './components/UiModal/UiModal.vue'
+export { default as UiTable } from './components/UiTable/UiTable.vue'
+export { default as UiSpinner } from './components/UiSpinner/UiSpinner.vue'
+export { default as UiTooltip } from './components/UiTooltip/UiTooltip.vue'

@@ -94,3 +94,56 @@ func (r *SubscriptionRepository) Update(id uint, upd *SubscriptionUpdate) (*Subs
 
 	return r.GetByID(id)
 }
+
+func (r *SubscriptionRepository) UpdateByBillingId(billingId string, upd *SubscriptionUpdate) (*Subscription, error) {
+	result := r.db.DB.Model(&Subscription{}).Where("billing_id = ?", billingId).
+		Select("status", "current_period_start", "current_period_end", "cancel_at", "canceled_at", "trial_start", "trial_end").
+		Updates(upd)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	return r.GetByBillingID(billingId)
+}
+
+func (r *SubscriptionRepository) GetSubscriptionByUserId(userId uint) (*Subscription, error) {
+	var sub Subscription
+
+	result := r.db.DB.
+		Where("user_id = ? AND status IN ?", userId, []SubscriptionStatus{
+			SubscriptionStatusActive,
+			SubscriptionStatusTrialing,
+		}).
+		First(&sub)
+
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	return &sub, nil
+}
+
+func (r *SubscriptionRepository) GetSubscriptionByEmail(email string) (*Subscription, error) {
+	var sub Subscription
+
+	result := r.db.DB.
+		Model(&Subscription{}).
+		Joins("JOIN users ON users.id = subscriptions.user_id").
+		Where("users.email = ?", email).
+		Where("subscriptions.status = ?", SubscriptionStatusActive).
+		First(&sub)
+
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	return &sub, nil
+}

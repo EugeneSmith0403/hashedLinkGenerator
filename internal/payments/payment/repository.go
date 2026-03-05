@@ -45,6 +45,12 @@ func (r *PaymentRepository) LinkInvoice(paymentID uuid.UUID, invoiceID uint) err
 		Update("invoice_id", invoiceID).Error
 }
 
+func (r *PaymentRepository) LinkSubscriptionByPI(piID string, subscriptionID uint) error {
+	return r.db.DB.Model(&paymentmodels.Payment{}).
+		Where("payment_intent_id = ?", piID).
+		Update("subscription_id", subscriptionID).Error
+}
+
 func (r *PaymentRepository) GetByUuid(id uuid.UUID) (*paymentmodels.Payment, error) {
 	var p paymentmodels.Payment
 	result := r.db.DB.First(&p, "id = ?", id)
@@ -73,4 +79,13 @@ func (r *PaymentRepository) GetByPaymentIntentID(piID string) (*paymentmodels.Pa
 	}
 
 	return &p, nil
+}
+
+func (r *PaymentRepository) GetByAccountID(accountID uint) ([]paymentmodels.Payment, error) {
+	var payments []paymentmodels.Payment
+	result := r.db.DB.Where("account_id = ?", accountID).Order("created_at DESC").Find(&payments)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return payments, nil
 }

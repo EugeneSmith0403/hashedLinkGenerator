@@ -97,12 +97,12 @@ func newApp(cfg *configs.Config) *app {
 		stats: stats.NewStatsService(&stats.StatServiceDep{
 			EventBus:        eventBus,
 			StatsRepository: repos.stats,
-			RedisSrvice:     redis,
 		}),
 		account: account.NewAccountService(account.AccountServiceDeps{
 			AccountRepository: repos.account,
 			PaymentService:    customerAcct,
 			UserRepository:    repos.user,
+			Redis:             redis,
 		}),
 		subscription: subscription.NewSubscriptionService(subscription.SubscriptionServiceDeps{
 			SubscriptionRepository: repos.subscription,
@@ -137,34 +137,46 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 		RedisSrvice: a.redis,
 	})
 	link.NewLinkHandler(router, link.LinkHandlerDeps{
-		Config:         a.cfg,
-		LinkRepository: a.repos.link,
-		UserRepository: a.repos.user,
-		JWTService:     a.svc.jwt,
-		EventBus:       a.eventBus,
+		Config:              a.cfg,
+		LinkRepository:      a.repos.link,
+		UserRepository:      a.repos.user,
+		JWTService:          a.svc.jwt,
+		EventBus:            a.eventBus,
+		SubscriptionService: a.svc.subscription,
 	})
 	stats.NewStatsHandler(router, stats.StatsHandlerDeps{
 		Config:          a.cfg,
 		JWTService:      a.svc.jwt,
 		StatsRepository: a.repos.stats,
 		StatsService:    a.svc.stats,
+		Redis: a.redis,
 	})
 	account.NewAccountHandler(router, account.AccountHandlerDeps{
 		AccountService: a.svc.account,
 		UserRepository: a.repos.user,
 		JWTService:     a.svc.jwt,
 	})
+	payment.NewPaymentHandler(router, payment.PaymentHandlerDeps{
+		PaymentRepository: a.repos.payment,
+		JWTService:        a.svc.jwt,
+		AccountService:    a.svc.account,
+	})
 	stripe.NewStripeHandlers(router, stripe.StripeHandlerDeps{
-		PaymentService: a.svc.payment,
-		JWTService:     a.svc.jwt,
-		AccountService: a.svc.account,
-		PlanRepository: a.repos.plan,
+		PaymentService:      a.svc.payment,
+		JWTService:          a.svc.jwt,
+		AccountService:      a.svc.account,
+		PlanRepository:      a.repos.plan,
+		SubscriptionService: a.svc.subscription,
 	})
 	subscription.NewSubscriptionHandlers(router, subscription.SubscriptionHandlerDeps{
 		SubscriptionService: a.svc.subscription,
 		JWTService:          a.svc.jwt,
 		AccountService:      a.svc.account,
 		PlanRepository:      a.repos.plan,
+	})
+	plan.NewPlanHandler(router, plan.PlanHandlerDeps{
+		PlanRepository: a.repos.plan,
+		Redis:          a.redis,
 	})
 	webhook.NewWebhookHandlers(router, webhook.WebhookHandlerDeps{
 		PaymentService:         a.svc.payment,

@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"strconv"
 
 	paymentmodels "adv/go-http/internal/payments/models"
 
@@ -17,7 +18,7 @@ func paymentFromIntent(id uuid.UUID, accountID uint, pi *stripeGo.PaymentIntent)
 	if len(pi.PaymentMethodTypes) > 0 {
 		pmType = pi.PaymentMethodTypes[0]
 	}
-	return &paymentmodels.Payment{
+	p := &paymentmodels.Payment{
 		ID:                id,
 		AccountID:         accountID,
 		PaymentIntentID:   pi.ID,
@@ -31,6 +32,13 @@ func paymentFromIntent(id uuid.UUID, accountID uint, pi *stripeGo.PaymentIntent)
 		FailureMessage:    failureMessage,
 		ProviderMetadata:  datatypes.JSON(metaJSON),
 	}
+	if planIDStr, ok := pi.Metadata["plan_id"]; ok {
+		if v, err := strconv.ParseUint(planIDStr, 10, 64); err == nil {
+			uid := uint(v)
+			p.PlanID = &uid
+		}
+	}
+	return p
 }
 
 func extractChargeID(pi *stripeGo.PaymentIntent) *string {

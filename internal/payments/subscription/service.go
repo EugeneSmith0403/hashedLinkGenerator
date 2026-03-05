@@ -77,7 +77,7 @@ func (s *SubscriptionService) CreateSubscription(userID, planID uint, customedId
 		CustomerID:         customedId,
 		Status:             SubscriptionStatus(sub.Status),
 		CurrentPeriodStart: start,
-		CurrentPeriodEnd:   planPeriodEnd(p.Name, start),
+		CurrentPeriodEnd:   planPeriodEnd(p.IntervalMonths, start),
 	}
 
 	entity.CancelAt, entity.CanceledAt, entity.TrialStart, entity.TrialEnd = mapSubTimestamps(sub)
@@ -89,8 +89,38 @@ func (s *SubscriptionService) CreateSubscription(userID, planID uint, customedId
 	return sub, nil
 }
 
+func (s *SubscriptionService) CancelSubscription(subId string) (*Subscription, error) {
+	canceledSub, err := s.stripeProvider.V1Subscriptions.Cancel(s.ctx, subId, nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	canceledAt := time.Now()
+
+	updatedData := &SubscriptionUpdate{
+		Status:     SubscriptionStatusCanceled,
+		CanceledAt: &canceledAt,
+	}
+
+	return s.subscriptionRepository.UpdateByBillingId(canceledSub.ID, updatedData)
+
+}
+
+func (s *SubscriptionService) MarkCanceled(billingID string) (*Subscription, error) {
+	canceledAt := time.Now()
+	return s.subscriptionRepository.UpdateByBillingId(billingID, &SubscriptionUpdate{
+		Status:     SubscriptionStatusCanceled,
+		CanceledAt: &canceledAt,
+	})
+}
+
 func (s *SubscriptionService) GetByBillingID(billingID string) (*Subscription, error) {
 	return s.subscriptionRepository.GetByBillingID(billingID)
+}
+
+func (s *SubscriptionService) GetSubscriptionByUserId(userID uint) (*Subscription, error) {
+	return s.subscriptionRepository.GetSubscriptionByUserId(userID)
 }
 
 func (s *SubscriptionService) HasActiveSubscription(userID uint) (bool, error) {
@@ -110,10 +140,19 @@ func (s *SubscriptionService) UpdateSubscriptionFromEvent(sub *stripeGo.Subscrip
 		return nil
 	}
 
+	p, err := s.planRepository.GetByID(existing.PlanID)
+	if err != nil {
+		return fmt.Errorf("get plan: %w", err)
+	}
+	if p == nil {
+		return fmt.Errorf("plan %d not found", existing.PlanID)
+	}
+
+	start := time.Unix(sub.StartDate, 0)
 	upd := &SubscriptionUpdate{
 		Status:             SubscriptionStatus(sub.Status),
-		CurrentPeriodStart: time.Unix(sub.StartDate, 0),
-		CurrentPeriodEnd:   time.Unix(sub.BillingCycleAnchor, 0),
+		CurrentPeriodStart: start,
+		CurrentPeriodEnd:   planPeriodEnd(p.IntervalMonths, start),
 	}
 
 	upd.CancelAt, upd.CanceledAt, upd.TrialStart, upd.TrialEnd = mapSubTimestamps(sub)
@@ -144,47 +183,47 @@ func (s *SubscriptionService) CreateFromStripeSub(sub *stripeGo.Subscription, us
 		CustomerID:         customerID,
 		Status:             SubscriptionStatus(sub.Status),
 		CurrentPeriodStart: start,
-		CurrentPeriodEnd:   planPeriodEnd(p.Name, start),
+		CurrentPeriodEnd:   planPeriodEnd(p.IntervalMonths, start),
 	}
 	entity.CancelAt, entity.CanceledAt, entity.TrialStart, entity.TrialEnd = mapSubTimestamps(sub)
 
 	return s.subscriptionRepository.Create(entity)
 }
 
-func (s *SubscriptionService) CreateFromPaymentIntent(pi *stripeGo.PaymentIntent) error {
+func (s *SubscriptionService) CreateFromPaymentIntent(pi *stripeGo.PaymentIntent) (*Subscription, error) {
 	userIDStr, ok := pi.Metadata["user_id"]
 	if !ok {
-		return errors.New("missing user_id in payment intent metadata")
+		return nil, errors.New("missing user_id in payment intent metadata")
 	}
 	userID64, err := strconv.ParseUint(userIDStr, 10, 64)
 	if err != nil {
-		return fmt.Errorf("invalid user_id in metadata: %w", err)
+		return nil, fmt.Errorf("invalid user_id in metadata: %w", err)
 	}
 
 	planIDStr, ok := pi.Metadata["plan_id"]
 	if !ok {
-		return errors.New("missing plan_id in payment intent metadata")
+		return nil, errors.New("missing plan_id in payment intent metadata")
 	}
 	planID64, err := strconv.ParseUint(planIDStr, 10, 64)
 	if err != nil {
-		return fmt.Errorf("invalid plan_id in metadata: %w", err)
+		return nil, fmt.Errorf("invalid plan_id in metadata: %w", err)
 	}
 	planID := uint(planID64)
 
 	existing, err := s.subscriptionRepository.GetByBillingID(pi.ID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if existing != nil {
-		return nil
+		return existing, nil
 	}
 
 	p, err := s.planRepository.GetByID(planID)
 	if err != nil {
-		return fmt.Errorf("get plan: %w", err)
+		return nil, fmt.Errorf("get plan: %w", err)
 	}
 	if p == nil {
-		return fmt.Errorf("plan %d not found", planID)
+		return nil, fmt.Errorf("plan %d not found", planID)
 	}
 
 	var customerID string
@@ -200,9 +239,8 @@ func (s *SubscriptionService) CreateFromPaymentIntent(pi *stripeGo.PaymentIntent
 		CustomerID:         customerID,
 		Status:             SubscriptionStatusActive,
 		CurrentPeriodStart: start,
-		CurrentPeriodEnd:   planPeriodEnd(p.Name, start),
+		CurrentPeriodEnd:   planPeriodEnd(p.IntervalMonths, start),
 	}
 
-	_, err = s.subscriptionRepository.Create(entity)
-	return err
+	return s.subscriptionRepository.Create(entity)
 }

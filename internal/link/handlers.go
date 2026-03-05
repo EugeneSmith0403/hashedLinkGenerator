@@ -18,10 +18,11 @@ import (
 
 type LinkHandlerDeps struct {
 	*configs.Config
-	LinkRepository *LinkRepository
-	UserRepository *user.UserRepository
-	JWTService     *jwt.JWTService
-	EventBus       *event.EventBus
+	LinkRepository      *LinkRepository
+	UserRepository      *user.UserRepository
+	JWTService          *jwt.JWTService
+	EventBus            *event.EventBus
+	SubscriptionService middleware.SubChecker
 }
 
 type LinkHandler struct {
@@ -49,14 +50,53 @@ func NewLinkHandler(router *http.ServeMux, deps LinkHandlerDeps) {
 	}
 
 	// Middlewares
+	authMiddleware := middleware.Chain(
+		middleware.IsAuthed(deps.JWTService),
+	)
 	createMiddleware := middleware.Chain(
 		middleware.IsAuthed(deps.JWTService),
+		middleware.HasActiveSubscription(deps.UserRepository, deps.SubscriptionService),
 	)
 
 	router.HandleFunc("GET /{hash}", handler.GetTo())
+	router.Handle("GET /links", authMiddleware(handler.List()))
 	router.Handle("POST /link", createMiddleware(handler.Create()))
-	router.Handle("PATCH /link/{id}", createMiddleware(handler.Update()))
-	router.Handle("DELETE /link/{id}", createMiddleware(handler.Delete()))
+	router.Handle("PATCH /link/{id}", authMiddleware(handler.Update()))
+	router.Handle("DELETE /link/{id}", authMiddleware(handler.Delete()))
+}
+
+func (link *LinkHandler) List() http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		email := req.Context().Value(middleware.ContextEmailKey).(string)
+		currentUser, err := link.UserRepository.FindByEmail(email)
+		if err != nil || currentUser == nil {
+			link.responsePkg.Json(&response.JsonOptions{
+				Data:   "user not found",
+				Code:   http.StatusUnauthorized,
+				Writer: w,
+				Reader: req,
+			})
+			return
+		}
+
+		links, err := link.LinkRepository.GetByUserID(currentUser.ID)
+		if err != nil {
+			link.responsePkg.Json(&response.JsonOptions{
+				Data:   err,
+				Code:   http.StatusInternalServerError,
+				Writer: w,
+				Reader: req,
+			})
+			return
+		}
+
+		link.responsePkg.Json(&response.JsonOptions{
+			Data:   links,
+			Code:   http.StatusOK,
+			Writer: w,
+			Reader: req,
+		})
+	}
 }
 
 func (link *LinkHandler) Create() http.HandlerFunc {
@@ -173,8 +213,6 @@ func (link *LinkHandler) GetTo() http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 
 		hash := req.PathValue("hash")
-
-		fmt.Println(hash)
 
 		result, err := link.LinkRepository.GetByHash(hash)
 
