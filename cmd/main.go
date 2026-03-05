@@ -34,141 +34,171 @@ import (
 	stripeGo "github.com/stripe/stripe-go/v84"
 )
 
-func loadConfigs(config ...*configs.Config) *configs.Config {
-	var cfg *configs.Config
-	if len(config) > 0 {
-		cfg = config[0]
-	} else {
-		cfg = configs.LoadConfig()
-	}
-
-	return cfg
+type repositories struct {
+	link         *link.LinkRepository
+	user         *user.UserRepository
+	stats        *stats.StatsRepository
+	payment      *payment.PaymentRepository
+	invoice      *invoice.InvoiceRepository
+	account      *account.AccountRepository
+	plan         *plan.PlanRepository
+	subscription *subscription.SubscriptionRepository
 }
 
-func App(cfg *configs.Config) http.Handler {
-	db := db.NewDb(cfg)
+type services struct {
+	auth         *auth.AuthService
+	jwt          *jwt.JWTService
+	stats        *stats.StatsService
+	account      *account.AccountService
+	subscription *subscription.SubscriptionService
+	payment      *stripeServices.PaymentService
+	customerAcct *stripeServices.CustomerAccountService
+	invoice      *invoice.InvoiceService
+}
 
-	linkRepository := link.NewLinkRepository(db)
-	userRepository := user.NewUserRepository(db)
-	statsRepository := stats.NewStatsRepository(db)
+type app struct {
+	cfg      *configs.Config
+	repos    *repositories
+	svc      *services
+	redis    *pkgRedis.Redis
+	eventBus *event.EventBus
+}
+
+func newApp(cfg *configs.Config) *app {
+	database := db.NewDb(cfg)
 	eventBus := event.NewEventBus()
 
-	// Redis
 	cacheMinutes, _ := strconv.Atoi(cfg.Redis.Cache)
-	redisClient := pkgRedis.NewRedis(&goRedis.Options{
+	redis := pkgRedis.NewRedis(&goRedis.Options{
 		Addr:     cfg.Redis.Addr,
 		Username: cfg.Redis.Username,
 		Password: cfg.Redis.Password,
 	}, helpers.ToMinutes(cacheMinutes))
 
-	statsService := stats.NewStatsService(&stats.StatServiceDep{
-		EventBus:        eventBus,
-		StatsRepository: statsRepository,
-		RedisSrvice:     redisClient,
-	})
-	router := http.NewServeMux()
+	repos := &repositories{
+		link:         link.NewLinkRepository(database),
+		user:         user.NewUserRepository(database),
+		stats:        stats.NewStatsRepository(database),
+		payment:      payment.NewPaymentRepository(database),
+		invoice:      invoice.NewInvoiceRepository(database),
+		account:      account.NewAccountRepository(database),
+		plan:         plan.NewPlanRepository(database),
+		subscription: subscription.NewSubscriptionRepository(database),
+	}
 
-	// Services
-	authService := auth.NewAuthService(userRepository)
-	jwtService := jwt.NewJWTService(jwt.JwtDeps{
-		Secret:      cfg.Auth.Secret,
-		RedisSrvice: redisClient,
-	})
-	paymentRepository := payment.NewPaymentRepository(db)
-	invoiceRepository := invoice.NewInvoiceRepository(db)
 	stripeClient := stripeGo.NewClient(cfg.Stripe.ApiKey)
-
-	customerAccountSvc := stripeServices.NewCustomerAccountService(stripeServices.CustomerAccountServiceDeps{
+	customerAcct := stripeServices.NewCustomerAccountService(stripeServices.CustomerAccountServiceDeps{
 		StripeClient: stripeClient,
 	})
-	paymentSvc := stripeServices.NewPaymentService(stripeServices.PaymentServiceDeps{
-		StripeClient:      stripeClient,
-		WebhookSecret:     cfg.Stripe.WebhookSecret,
-		ReturnURL:         cfg.Stripe.ReturnURL,
-		PaymentRepository: paymentRepository,
-	})
-	invoiceSvc := invoice.NewInvoiceService(invoice.InvoiceServiceDeps{
-		StripeClient:      stripeClient,
-		InvoiceRepository: invoiceRepository,
-		PaymentRepository: paymentRepository,
-	})
 
-	accountRepository := account.NewAccountRepository(db)
-	accountService := account.NewAccountService(account.AccountServiceDeps{
-		AccountRepository: accountRepository,
-		PaymentService:    customerAccountSvc,
-		UserRepository:    userRepository,
-	})
-	planRepository := plan.NewPlanRepository(db)
-	subscriptionRepository := subscription.NewSubscriptionRepository(db)
-	subscriptionService := subscription.NewSubscriptionService(subscription.SubscriptionServiceDeps{
-		SubscriptionRepository: subscriptionRepository,
-		PlanRepository:         planRepository,
-		StripeClient:           stripeClient,
-		Ctx:                    context.Background(),
-	})
+	svc := &services{
+		auth: auth.NewAuthService(repos.user),
+		jwt:  jwt.NewJWTService(jwt.JwtDeps{Secret: cfg.Auth.Secret, RedisSrvice: redis}),
+		stats: stats.NewStatsService(&stats.StatServiceDep{
+			EventBus:        eventBus,
+			StatsRepository: repos.stats,
+		}),
+		account: account.NewAccountService(account.AccountServiceDeps{
+			AccountRepository: repos.account,
+			PaymentService:    customerAcct,
+			UserRepository:    repos.user,
+			Redis:             redis,
+		}),
+		subscription: subscription.NewSubscriptionService(subscription.SubscriptionServiceDeps{
+			SubscriptionRepository: repos.subscription,
+			PlanRepository:         repos.plan,
+			StripeClient:           stripeClient,
+			Ctx:                    context.Background(),
+		}),
+		payment: stripeServices.NewPaymentService(stripeServices.PaymentServiceDeps{
+			StripeClient:      stripeClient,
+			WebhookSecret:     cfg.Stripe.WebhookSecret,
+			ReturnURL:         cfg.Stripe.ReturnURL,
+			PaymentRepository: repos.payment,
+		}),
+		customerAcct: customerAcct,
+		invoice: invoice.NewInvoiceService(invoice.InvoiceServiceDeps{
+			StripeClient:      stripeClient,
+			InvoiceRepository: repos.invoice,
+			PaymentRepository: repos.payment,
+		}),
+	}
 
+	return &app{cfg: cfg, repos: repos, svc: svc, redis: redis, eventBus: eventBus}
+}
+
+func (a *app) registerHandlers(router *http.ServeMux) {
 	router.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 
-	// Handlers
 	auth.NewAuthHandlers(router, auth.AuthHandlerDeps{
-		Config:      cfg,
-		AuthService: authService,
-		JWTService:  jwtService,
-		RedisSrvice: redisClient,
+		Config:      a.cfg,
+		AuthService: a.svc.auth,
+		JWTService:  a.svc.jwt,
+		RedisSrvice: a.redis,
 	})
 	link.NewLinkHandler(router, link.LinkHandlerDeps{
-		Config:         cfg,
-		LinkRepository: linkRepository,
-		UserRepository: userRepository,
-		JWTService:     jwtService,
-		EventBus:       eventBus,
+		Config:              a.cfg,
+		LinkRepository:      a.repos.link,
+		UserRepository:      a.repos.user,
+		JWTService:          a.svc.jwt,
+		EventBus:            a.eventBus,
+		SubscriptionService: a.svc.subscription,
 	})
-
 	stats.NewStatsHandler(router, stats.StatsHandlerDeps{
-		Config:          cfg,
-		JWTService:      jwtService,
-		StatsRepository: statsRepository,
-		StatsService:    statsService,
+		Config:          a.cfg,
+		JWTService:      a.svc.jwt,
+		StatsRepository: a.repos.stats,
+		StatsService:    a.svc.stats,
+		Redis: a.redis,
 	})
-
 	account.NewAccountHandler(router, account.AccountHandlerDeps{
-		AccountService: accountService,
-		UserRepository: userRepository,
-		JWTService:     jwtService,
+		AccountService: a.svc.account,
+		UserRepository: a.repos.user,
+		JWTService:     a.svc.jwt,
 	})
-
+	payment.NewPaymentHandler(router, payment.PaymentHandlerDeps{
+		PaymentRepository: a.repos.payment,
+		JWTService:        a.svc.jwt,
+		AccountService:    a.svc.account,
+	})
 	stripe.NewStripeHandlers(router, stripe.StripeHandlerDeps{
-		PaymentService: paymentSvc,
-		JWTService:     jwtService,
-		AccountService: accountService,
-		PlanRepository: planRepository,
+		PaymentService:      a.svc.payment,
+		JWTService:          a.svc.jwt,
+		AccountService:      a.svc.account,
+		PlanRepository:      a.repos.plan,
+		SubscriptionService: a.svc.subscription,
 	})
-
 	subscription.NewSubscriptionHandlers(router, subscription.SubscriptionHandlerDeps{
-		SubscriptionService: subscriptionService,
-		JWTService:          jwtService,
-		AccountService:      accountService,
-		PlanRepository:      planRepository,
+		SubscriptionService: a.svc.subscription,
+		JWTService:          a.svc.jwt,
+		AccountService:      a.svc.account,
+		PlanRepository:      a.repos.plan,
 	})
-
+	plan.NewPlanHandler(router, plan.PlanHandlerDeps{
+		PlanRepository: a.repos.plan,
+		Redis:          a.redis,
+	})
 	webhook.NewWebhookHandlers(router, webhook.WebhookHandlerDeps{
-		PaymentService:         paymentSvc,
-		CustomerAccountService: customerAccountSvc,
-		InvoiceService:         invoiceSvc,
-		SubscriptionService:    subscriptionService,
+		PaymentService:         a.svc.payment,
+		CustomerAccountService: a.svc.customerAcct,
+		InvoiceService:         a.svc.invoice,
+		SubscriptionService:    a.svc.subscription,
 	})
+}
 
-	// Middlewares
-	stack := middleware.Chain(
-		middleware.Cors,
-		middleware.Logging,
-	)
+func App(cfg *configs.Config) http.Handler {
+	a := newApp(cfg)
+	router := http.NewServeMux()
+	a.registerHandlers(router)
+	go a.svc.stats.AddClick()
+	return middleware.Chain(middleware.Cors, middleware.Logging)(router)
+}
 
-	// Events
-	go statsService.AddClick()
-
-	return stack(router)
+func loadConfigs(config ...*configs.Config) *configs.Config {
+	if len(config) > 0 {
+		return config[0]
+	}
+	return configs.LoadConfig()
 }
 
 func main() {
@@ -180,7 +210,6 @@ func main() {
 	})
 
 	if configs.Mode == "production" {
-		// Smooth shutdown
 		go func() {
 			sigchan := make(chan os.Signal, 1)
 			signal.Notify(sigchan, os.Interrupt, syscall.SIGTERM)

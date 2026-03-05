@@ -6,17 +6,11 @@ import (
 	stripeGo "github.com/stripe/stripe-go/v84"
 )
 
-func planPeriodEnd(name string, start time.Time) time.Time {
-	switch name {
-	case "Monthly":
-		return start.AddDate(0, 1, 0)
-	case "Semi-Annual":
-		return start.AddDate(0, 6, 0)
-	case "Annual":
-		return start.AddDate(1, 0, 0)
-	default:
-		return start.AddDate(0, 1, 0)
+func planPeriodEnd(intervalMonths int, start time.Time) time.Time {
+	if intervalMonths <= 0 {
+		intervalMonths = 1
 	}
+	return start.AddDate(0, intervalMonths, 0)
 }
 
 func mapSubTimestamps(sub *stripeGo.Subscription) (cancelAt, canceledAt, trialStart, trialEnd *time.Time) {

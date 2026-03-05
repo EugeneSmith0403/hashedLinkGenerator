@@ -47,34 +47,37 @@ type ConfirmPaymentIntentResponse struct {
 	ConfirmedUrl string    `json:"confirmedUrl"`
 }
 
-func (s *PaymentService) CreatePaymentIntent(
-	accountId uint,
-	customerID string,
-	cardType string,
-	currency stripe.Currency,
-	amount int64,
-	planId uint,
-) (*stripeGo.PaymentIntent, error) {
+type CreatePaymentIntentParams struct {
+	AccountId  uint
+	UserId     uint
+	CustomerID string
+	CardType   string
+	Currency   stripe.Currency
+	Amount     int64
+	PlanId     uint
+}
+
+func (s *PaymentService) CreatePaymentIntent(p CreatePaymentIntentParams) (*stripeGo.PaymentIntent, error) {
 	paymentID := uuid.New()
 
-	params := &stripeGo.PaymentIntentCreateParams{
-		Customer:      stripe.String(customerID),
-		PaymentMethod: stripe.String(cardType),
-		Amount:        stripe.Int64(amount),
-		Currency:      stripe.String(currency),
+	piParams := &stripeGo.PaymentIntentCreateParams{
+		Customer:      stripe.String(p.CustomerID),
+		PaymentMethod: stripe.String(p.CardType),
+		Amount:        stripe.Int64(p.Amount * 100),
+		Currency:      stripe.String(p.Currency),
 		Metadata: map[string]string{
 			"payment_id": paymentID.String(),
-			"plan_id":    fmt.Sprintf("%d", planId),
-			"user_id":    fmt.Sprintf("%d", accountId),
+			"plan_id":    fmt.Sprintf("%d", p.PlanId),
+			"user_id":    fmt.Sprintf("%d", p.UserId),
 		},
 	}
 
-	pi, err := s.stripeProvider.V1PaymentIntents.Create(s.ctx, params)
+	pi, err := s.stripeProvider.V1PaymentIntents.Create(s.ctx, piParams)
 	if err != nil {
 		return nil, err
 	}
 
-	payment := paymentFromIntent(paymentID, accountId, pi)
+	payment := paymentFromIntent(paymentID, p.AccountId, pi)
 	if _, saveErr := s.paymentRepository.Create(payment); saveErr != nil {
 		return nil, saveErr
 	}
@@ -131,6 +134,14 @@ func (s *PaymentService) UpdatePaymentFromIntent(pi *stripeGo.PaymentIntent) (*s
 		payment.ChargeID = extractChargeID(pi)
 		payment.FailureCode, payment.FailureMessage = extractFailure(pi)
 		payment.ProviderMetadata = datatypes.JSON(metaJSON)
+		if payment.PlanID == nil {
+			if planIDStr, ok := pi.Metadata["plan_id"]; ok {
+				if v, err := strconv.ParseUint(planIDStr, 10, 64); err == nil {
+					uid := uint(v)
+					payment.PlanID = &uid
+				}
+			}
+		}
 	}
 
 	_, err = s.paymentRepository.Save(payment)
@@ -145,6 +156,27 @@ func (s *PaymentService) CancelPaymentIntent(paymentIntentID string) (*stripeGo.
 	return result, nil
 }
 
+func (s *PaymentService) RefundPaymentIntent(paymentIntentID string) error {
+	_, err := s.stripeProvider.V1Refunds.Create(s.ctx, &stripeGo.RefundCreateParams{
+		PaymentIntent: stripe.String(paymentIntentID),
+	})
+	return err
+}
+
+func (s *PaymentService) CancelPaymentInDB(paymentIntentID string) error {
+	p, err := s.paymentRepository.GetByPaymentIntentID(paymentIntentID)
+	if err != nil || p == nil {
+		return err
+	}
+	p.Status = stripeGo.PaymentIntentStatusCanceled
+	_, err = s.paymentRepository.Save(p)
+	return err
+}
+
+func (s *PaymentService) LinkSubscription(piID string, subscriptionID uint) error {
+	return s.paymentRepository.LinkSubscriptionByPI(piID, subscriptionID)
+}
+
 func (s *PaymentService) DetectPaymentWebhook(payload []byte, sigHeader string) (*stripeGo.Event, error) {
 	event, err := webhook.ConstructEvent(payload, sigHeader, s.webhookSecret)
 	if err != nil {
@@ -152,4 +184,3 @@ func (s *PaymentService) DetectPaymentWebhook(payload []byte, sigHeader string) 
 	}
 	return &event, nil
 }
-

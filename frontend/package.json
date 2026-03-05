@@ -1,21 +1,11 @@
 {
-  "name": "subscription-frontend",
-  "version": "1.0.0",
-  "type": "module",
+  "name": "repo",
+  "private": true,
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@stripe/stripe-js": "^4.0.0",
-    "@tanstack/vue-query": "^5.0.0",
-    "vue": "^3.4.0",
-    "vue-router": "^4.3.0"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-vue": "^5.0.0",
-    "vite": "^5.0.0"
+    "dev": "pnpm --filter @app/web dev",
+    "build": "pnpm --filter @app/web build",
+    "storybook": "pnpm --filter @repo/ui storybook",
+    "lint": "pnpm -r lint"
   },
   "packageManager": "pnpm@10.22.0+sha512.bf049efe995b28f527fd2b41ae0474ce29186f7edcb3bf545087bd61fbbebb2bf75362d1307fda09c2d288e1e499787ac12d4fcb617a974718a6051f2eee741c"
 }

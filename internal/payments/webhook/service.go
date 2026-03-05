@@ -105,6 +105,16 @@ func (s *WebhookService) HandlePaymentIntentEvent(event *stripeGo.Event) error {
 			log.Printf("[stripe] failed to update payment for payment_intent %s: %v\n", pi.ID, err)
 			break
 		}
+
+		sub, subErr := s.subscriptionService.CreateFromPaymentIntent(&pi)
+		if subErr != nil {
+			log.Printf("[stripe] failed to create subscription for payment_intent %s: %v\n", pi.ID, subErr)
+		} else if sub != nil {
+			if linkErr := s.paymentService.LinkSubscription(pi.ID, sub.ID); linkErr != nil {
+				log.Printf("[stripe] failed to link subscription %d to payment_intent %s: %v\n", sub.ID, pi.ID, linkErr)
+			}
+		}
+
 		// TODO send to invoice queue
 		if err := s.invoiceService.CreateInvoiceForPayment(updatedPi); err != nil {
 			log.Printf("[stripe] failed to create invoice for payment_intent %s: %v\n", pi.ID, err)

@@ -8,9 +8,9 @@ func Chain(middlewares ...Middleware) Middleware {
 
 	return func(next http.Handler) http.Handler {
 
-		for _, v := range middlewares {
+		for i := len(middlewares) - 1; i >= 0; i-- {
 
-			next = v(next)
+			next = middlewares[i](next)
 
 		}
 

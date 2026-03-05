@@ -1,13 +1,15 @@
 package account
 
 import (
+	"errors"
+	"net/http"
+
 	internalJWT "adv/go-http/internal/jwt"
 	"adv/go-http/internal/user"
 	errorType "adv/go-http/pkg/errorType"
 	"adv/go-http/pkg/middleware"
 	"adv/go-http/pkg/request"
 	"adv/go-http/pkg/response"
-	"net/http"
 )
 
 type AccountHandlerDeps struct {
@@ -121,6 +123,32 @@ func (h *AccountHandler) Create() http.HandlerFunc {
 			return
 		}
 
+		getAccount, accErr := h.AccountService.GetAccountByEmail(email)
+		if accErr != nil && !errors.Is(accErr, ErrAccountNotFound) {
+			h.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: accErr.Error()},
+				Writer: w,
+				Reader: req,
+				Code:   http.StatusInternalServerError,
+			})
+			return
+		}
+
+		if getAccount != nil {
+			h.responsePkg.Json(&response.JsonOptions{
+				Data: &CreateAccountResponse{
+					ID:            getAccount.ID,
+					AccountStatus: getAccount.AccountStatus,
+					Provider:      getAccount.Provider,
+				},
+				Writer: w,
+				Reader: req,
+				Code:   http.StatusCreated,
+			})
+
+			return
+		}
+
 		foundUser, err := h.UserRepository.FindByEmail(email)
 		if err != nil {
 			h.responsePkg.Json(&response.JsonOptions{
@@ -142,7 +170,7 @@ func (h *AccountHandler) Create() http.HandlerFunc {
 		}
 
 		account, createErr := h.AccountService.CreateAccount(foundUser.Model.ID, foundUser.Name, foundUser.Email)
-		if createErr != nil {
+		if createErr != nil && !errors.Is(createErr, ErrUserNotFound) {
 			h.responsePkg.Json(&response.JsonOptions{
 				Data:   errorType.ErrorType{Error: createErr.Error()},
 				Writer: w,

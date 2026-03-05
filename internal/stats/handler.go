@@ -3,9 +3,12 @@ package stats
 import (
 	"adv/go-http/configs"
 	"adv/go-http/internal/jwt"
+	"adv/go-http/pkg/errorType"
 	"adv/go-http/pkg/middleware"
+	"adv/go-http/pkg/redis"
 	"adv/go-http/pkg/response"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -14,6 +17,7 @@ type StatsHandlerDeps struct {
 	JWTService      *jwt.JWTService
 	StatsRepository *StatsRepository
 	StatsService    *StatsService
+	Redis           *redis.Redis
 }
 
 type StatsHandler struct {
@@ -21,6 +25,7 @@ type StatsHandler struct {
 	responsePkg     response.Response
 	StatsRepository *StatsRepository
 	statsService    *StatsService
+	redis           *redis.Redis
 }
 
 func NewStatsHandler(router *http.ServeMux, deps StatsHandlerDeps) {
@@ -36,6 +41,7 @@ func NewStatsHandler(router *http.ServeMux, deps StatsHandlerDeps) {
 		responsePkg:     *response.NewResponse(options),
 		StatsRepository: deps.StatsRepository,
 		statsService:    deps.StatsService,
+		redis:           deps.Redis,
 	}
 
 	// Middlewares
@@ -49,12 +55,20 @@ func NewStatsHandler(router *http.ServeMux, deps StatsHandlerDeps) {
 
 func (stats *StatsHandler) getStats() http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-
+		email, _ := req.Context().Value(middleware.ContextEmailKey).(string)
 		queries := parsedTimeQuery([]string{"from", "to"}, req)
 
-		cachedStats, _ := GetCachedStat[[]Stats](stats.statsService, queries)
+		var linkID *uint
+		if raw := req.URL.Query().Get("linkId"); raw != "" {
+			if parsed, err := strconv.ParseUint(raw, 10, 64); err == nil {
+				id := uint(parsed)
+				linkID = &id
+			}
+		}
 
-		if cachedStats != nil {
+		cachedStats, _ := GetCachedStat[[]Stats](stats.redis, queries, email)
+
+		if cachedStats != nil && linkID == nil {
 			stats.responsePkg.Json(&response.JsonOptions{
 				Data:   cachedStats,
 				Code:   http.StatusOK,
@@ -64,7 +78,7 @@ func (stats *StatsHandler) getStats() http.HandlerFunc {
 			return
 		}
 
-		result, err := stats.StatsRepository.GetStats(&StatsQuery{from: queries["from"], to: queries["to"]})
+		result, err := stats.StatsRepository.GetStats(&StatsQuery{from: queries["from"], to: queries["to"], linkID: linkID})
 
 		if err != nil {
 			stats.responsePkg.Json(&response.JsonOptions{
@@ -82,15 +96,27 @@ func (stats *StatsHandler) getStats() http.HandlerFunc {
 			Writer: w,
 			Reader: req,
 		})
-
 	}
 }
 
 func (stats *StatsHandler) getGroupedStatsByDate() http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
+		email, ok := req.Context().Value(middleware.ContextEmailKey).(string)
+
+		if !ok {
+			stats.responsePkg.Json(&response.JsonOptions{
+				Data: &errorType.ErrorType{
+					Error: "Unathrorized",
+				},
+				Code:   http.StatusBadRequest,
+				Writer: w,
+				Reader: req,
+			})
+		}
+
 		queries := parsedTimeQuery([]string{"from", "to"}, req)
 
-		cachedStats, _ := GetCachedStat[[]StatsGroupByDate](stats.statsService, queries)
+		cachedStats, _ := GetCachedStat[[]StatsGroupByDate](stats.redis, queries, email)
 
 		if cachedStats != nil {
 			stats.responsePkg.Json(&response.JsonOptions{
@@ -114,7 +140,7 @@ func (stats *StatsHandler) getGroupedStatsByDate() http.HandlerFunc {
 			return
 		}
 
-		SetCachedStat(stats.statsService, result, queries)
+		SetCachedStat(stats.redis, result, queries, email)
 
 		stats.responsePkg.Json(&response.JsonOptions{
 			Data:   result,
@@ -122,7 +148,6 @@ func (stats *StatsHandler) getGroupedStatsByDate() http.HandlerFunc {
 			Writer: w,
 			Reader: req,
 		})
-
 	}
 }
 

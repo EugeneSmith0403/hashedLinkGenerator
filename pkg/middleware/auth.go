@@ -4,7 +4,6 @@ import (
 	"adv/go-http/internal/auth"
 	internalJWT "adv/go-http/internal/jwt"
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -16,12 +15,6 @@ type key string
 const (
 	ContextEmailKey key = "ContextEmailKey"
 )
-
-func sendJSONError(w http.ResponseWriter, message string, status int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
-}
 
 func IsAuthed(jwtService *internalJWT.JWTService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

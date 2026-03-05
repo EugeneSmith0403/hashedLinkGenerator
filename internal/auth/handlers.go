@@ -165,11 +165,38 @@ func (auth *AuthHandler) Register() http.HandlerFunc {
 			return
 		}
 
+		now := time.Now()
+		expiredHours, _ := strconv.Atoi(auth.Config.Auth.ExpiredAt)
+		expirationTime := now.Add(helpers.ToHours(expiredHours)).Unix()
+
+		claims := jwt.MapClaims{
+			"email":     email,
+			"createdAt": now,
+			"exp":       expirationTime,
+			"iat":       now.Unix(),
+		}
+
+		token, tokenErr := auth.JWTService.GenerateToken(&claims)
+		if tokenErr != nil {
+			auth.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: tokenErr.Error()},
+				Writer: w,
+				Reader: req,
+				Code:   http.StatusInternalServerError,
+			})
+			return
+		}
+
 		res := &RegisterResponse{
 			LoginResponse: &LoginResponse{
 				Email: email,
+				Token: token,
 			},
 		}
+
+		userKey := fmt.Sprintf("token:%s", body.Email)
+
+		auth.RedisSrvice.Set(userKey, true, time.Duration(expirationTime))
 
 		auth.responsePkg.Json(&response.JsonOptions{
 			Data:   res,

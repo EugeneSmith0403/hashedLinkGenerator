@@ -3,6 +3,8 @@ package subscription
 import (
 	"errors"
 	"net/http"
+	"strings"
+	"time"
 
 	"adv/go-http/internal/account"
 	internalJWT "adv/go-http/internal/jwt"
@@ -14,6 +16,38 @@ import (
 
 	stripeGo "github.com/stripe/stripe-go/v84"
 )
+
+type SubscriptionResponse struct {
+	ID                 uint               `json:"id"`
+	CreatedAt          time.Time          `json:"createdAt"`
+	UserID             uint               `json:"userId"`
+	PlanID             uint               `json:"planId"`
+	Status             SubscriptionStatus `json:"status"`
+	CurrentPeriodStart time.Time          `json:"currentPeriodStart"`
+	CurrentPeriodEnd   time.Time          `json:"currentPeriodEnd"`
+	CancelAt           *time.Time         `json:"cancelAt"`
+	CanceledAt         *time.Time         `json:"canceledAt"`
+	TrialStart         *time.Time         `json:"trialStart"`
+	TrialEnd           *time.Time         `json:"trialEnd"`
+	IsPaymentIntent    bool               `json:"isPaymentIntent"`
+}
+
+func toSubscriptionResponse(s *Subscription) *SubscriptionResponse {
+	return &SubscriptionResponse{
+		ID:                 s.ID,
+		CreatedAt:          s.CreatedAt,
+		UserID:             s.UserID,
+		PlanID:             s.PlanID,
+		Status:             s.Status,
+		CurrentPeriodStart: s.CurrentPeriodStart,
+		CurrentPeriodEnd:   s.CurrentPeriodEnd,
+		CancelAt:           s.CancelAt,
+		CanceledAt:         s.CanceledAt,
+		TrialStart:         s.TrialStart,
+		TrialEnd:           s.TrialEnd,
+		IsPaymentIntent:    strings.HasPrefix(s.BillingID, "pi_"),
+	}
+}
 
 type SubscriptionHandlerDeps struct {
 	SubscriptionService *SubscriptionService
@@ -43,9 +77,18 @@ func NewSubscriptionHandlers(router *http.ServeMux, deps SubscriptionHandlerDeps
 		middleware.IsAuthed(deps.JWTService),
 	)
 
+	router.Handle("GET /subscriptions/me", authMiddleware(handler.handleGetCurrentSubscription()))
 	router.Handle("POST /subscriptions/method", authMiddleware(handler.handleAddPaymentMethod()))
 	router.Handle("POST /subscriptions", authMiddleware(handler.handleCreateSubscription()))
+	router.Handle("PATCH /subscriptions/cancel", authMiddleware(handler.handleCancelSubscription()))
 }
+
+const (
+	errUnauthorized            = "unauthorized"
+	errPlanNotFound            = "plan not found"
+	errPlanNoStripePrice       = "plan has no stripe price configured"
+	errActiveSubNotFound       = "active subscription not found"
+)
 
 func stripeSubErrMsg(err error) string {
 	var stripeErr *stripeGo.Error
@@ -55,12 +98,70 @@ func stripeSubErrMsg(err error) string {
 	return err.Error()
 }
 
+func (h *SubscriptionHandler) handleGetCurrentSubscription() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		email, ok := r.Context().Value(middleware.ContextEmailKey).(string)
+		if !ok || email == "" {
+			h.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: errUnauthorized},
+				Writer: w,
+				Reader: r,
+				Code:   http.StatusUnauthorized,
+			})
+			return
+		}
+
+		foundAccount, err := h.accountService.GetAccountByEmail(email)
+		if err != nil || foundAccount == nil {
+			code := http.StatusInternalServerError
+			if errors.Is(err, account.ErrUserNotFound) || errors.Is(err, account.ErrAccountNotFound) {
+				code = http.StatusNotFound
+			}
+			h.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: stripeSubErrMsg(err)},
+				Writer: w,
+				Reader: r,
+				Code:   code,
+			})
+			return
+		}
+
+		sub, err := h.subscriptionService.GetSubscriptionByUserId(foundAccount.UserID)
+		if err != nil {
+			h.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: err.Error()},
+				Writer: w,
+				Reader: r,
+				Code:   http.StatusInternalServerError,
+			})
+			return
+		}
+
+		if sub == nil {
+			h.responsePkg.Json(&response.JsonOptions{
+				Data:   nil,
+				Writer: w,
+				Reader: r,
+				Code:   http.StatusNoContent,
+			})
+			return
+		}
+
+		h.responsePkg.Json(&response.JsonOptions{
+			Data:   toSubscriptionResponse(sub),
+			Writer: w,
+			Reader: r,
+			Code:   http.StatusOK,
+		})
+	}
+}
+
 func (h *SubscriptionHandler) handleAddPaymentMethod() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		email, ok := r.Context().Value(middleware.ContextEmailKey).(string)
 		if !ok || email == "" {
 			h.responsePkg.Json(&response.JsonOptions{
-				Data:   errorType.ErrorType{Error: "unauthorized"},
+				Data:   errorType.ErrorType{Error: errUnauthorized},
 				Writer: w,
 				Reader: r,
 				Code:   http.StatusUnauthorized,
@@ -108,7 +209,7 @@ func (h *SubscriptionHandler) handleCreateSubscription() http.HandlerFunc {
 		email, ok := r.Context().Value(middleware.ContextEmailKey).(string)
 		if !ok || email == "" {
 			h.responsePkg.Json(&response.JsonOptions{
-				Data:   errorType.ErrorType{Error: "unauthorized"},
+				Data:   errorType.ErrorType{Error: errUnauthorized},
 				Writer: w,
 				Reader: r,
 				Code:   http.StatusUnauthorized,
@@ -148,7 +249,7 @@ func (h *SubscriptionHandler) handleCreateSubscription() http.HandlerFunc {
 		}
 		if curPlan == nil {
 			h.responsePkg.Json(&response.JsonOptions{
-				Data:   errorType.ErrorType{Error: "plan not found"},
+				Data:   errorType.ErrorType{Error: errPlanNotFound},
 				Writer: w,
 				Reader: r,
 				Code:   http.StatusNotFound,
@@ -158,7 +259,7 @@ func (h *SubscriptionHandler) handleCreateSubscription() http.HandlerFunc {
 
 		if curPlan.StripePriceID == "" {
 			h.responsePkg.Json(&response.JsonOptions{
-				Data:   errorType.ErrorType{Error: "plan has no stripe price configured"},
+				Data:   errorType.ErrorType{Error: errPlanNoStripePrice},
 				Writer: w,
 				Reader: r,
 				Code:   http.StatusUnprocessableEntity,
@@ -187,6 +288,75 @@ func (h *SubscriptionHandler) handleCreateSubscription() http.HandlerFunc {
 			Writer: w,
 			Reader: r,
 			Code:   http.StatusCreated,
+		})
+	}
+}
+
+func (h *SubscriptionHandler) handleCancelSubscription() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		email, ok := r.Context().Value(middleware.ContextEmailKey).(string)
+		if !ok || email == "" {
+			h.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: errUnauthorized},
+				Writer: w,
+				Reader: r,
+				Code:   http.StatusUnauthorized,
+			})
+			return
+		}
+
+		foundAccount, err := h.accountService.GetAccountByEmail(email)
+		if err != nil || foundAccount == nil {
+			code := http.StatusInternalServerError
+			if errors.Is(err, account.ErrUserNotFound) || errors.Is(err, account.ErrAccountNotFound) {
+				code = http.StatusNotFound
+			}
+			h.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: stripeSubErrMsg(err)},
+				Writer: w,
+				Reader: r,
+				Code:   code,
+			})
+			return
+		}
+
+		sub, subErr := h.subscriptionService.GetSubscriptionByUserId(foundAccount.UserID)
+		if subErr != nil {
+			h.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: subErr.Error()},
+				Writer: w,
+				Reader: r,
+				Code:   http.StatusInternalServerError,
+			})
+			return
+		}
+		if sub == nil {
+			h.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: errActiveSubNotFound},
+				Writer: w,
+				Reader: r,
+				Code:   http.StatusNotFound,
+			})
+			return
+		}
+
+		canceled, cancelErr := h.subscriptionService.CancelSubscription(sub.BillingID)
+		if cancelErr != nil {
+			h.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: stripeSubErrMsg(cancelErr)},
+				Writer: w,
+				Reader: r,
+				Code:   http.StatusInternalServerError,
+			})
+			return
+		}
+
+		h.responsePkg.Json(&response.JsonOptions{
+			Data:   canceled,
+			Writer: w,
+			Reader: r,
+			Code:   http.StatusOK,
 		})
 	}
 }

@@ -15,8 +15,10 @@ type Payment struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"deletedAt" gorm:"index"`
 
-	AccountID uint  `json:"accountId" gorm:"index;not null"`
-	InvoiceID *uint `json:"invoiceId" gorm:"index"`
+	AccountID      uint  `json:"accountId" gorm:"index;not null"`
+	InvoiceID      *uint `json:"invoiceId" gorm:"index"`
+	PlanID         *uint `json:"planId" gorm:"index"`
+	SubscriptionID *uint `json:"subscriptionId" gorm:"index"`
 
 	PaymentIntentID string  `json:"paymentIntentId" gorm:"uniqueIndex"`
 	ChargeID        *string `json:"chargeId" gorm:"uniqueIndex"`

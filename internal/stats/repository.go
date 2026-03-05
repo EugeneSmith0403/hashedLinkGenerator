@@ -13,8 +13,9 @@ type StatsRepository struct {
 }
 
 type StatsQuery struct {
-	to   time.Time
-	from time.Time
+	to     time.Time
+	from   time.Time
+	linkID *uint
 }
 
 func NewStatsRepository(db *db.Db) *StatsRepository {
@@ -34,6 +35,10 @@ func (r *StatsRepository) GetStats(query *StatsQuery) ([]Stats, error) {
 
 	if query.to.Unix() > 0 {
 		q = q.Where("date <= ?", query.to)
+	}
+
+	if query.linkID != nil {
+		q = q.Where("link_id = ?", *query.linkID)
 	}
 
 	res := q.Find(&stats)
@@ -80,7 +85,6 @@ func (r *StatsRepository) UpdateLinkClicks(linkID int) (*Stats, error) {
 
 	var stats Stats
 	err := r.db.Transaction(func(tx *gorm.DB) error {
-		// Используем INSERT ... ON CONFLICT для атомарного UPSERT
 		stats = Stats{
 			LinkID: uint(linkID),
 			Date:   today,
@@ -98,7 +102,6 @@ func (r *StatsRepository) UpdateLinkClicks(linkID int) (*Stats, error) {
 			return result.Error
 		}
 
-		// Получаем актуальные данные из БД
 		if err := tx.Where("link_id = ? AND date = ?", linkID, today).First(&stats).Error; err != nil {
 			return err
 		}
