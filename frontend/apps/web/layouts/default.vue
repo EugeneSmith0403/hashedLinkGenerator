@@ -4,12 +4,13 @@ import { useQueryClient } from '@tanstack/vue-query'
 const auth = useAuthStore()
 const { t } = useI18n()
 const router = useRouter()
+const localePath = useLocalePath()
 const queryClient = useQueryClient()
 
 function logout() {
   auth.logout()
   queryClient.clear()
-  router.push('/auth/login')
+  router.push(localePath('/auth/login'))
 }
 
 const nav = [
@@ -38,7 +39,7 @@ const nav = [
         <NuxtLink
           v-for="item in nav"
           :key="item.to"
-          :to="item.to"
+          :to="localePath(item.to)"
           class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
           active-class="bg-indigo-50 text-indigo-700"
           inactive-class="text-gray-600 hover:bg-gray-100 hover:text-gray-900"

@@ -4,9 +4,11 @@ import (
 	"io"
 	"net/http"
 
+	"adv/go-http/internal/jwt"
 	invoiceService "adv/go-http/internal/payments/invoice"
 	stripeServices "adv/go-http/internal/payments/stripe/services"
 	"adv/go-http/internal/payments/subscription"
+	"adv/go-http/pkg/middleware"
 )
 
 type WebhookHandlerDeps struct {
@@ -14,6 +16,7 @@ type WebhookHandlerDeps struct {
 	CustomerAccountService *stripeServices.CustomerAccountService
 	InvoiceService         *invoiceService.InvoiceService
 	SubscriptionService    *subscription.SubscriptionService
+	JWTService             *jwt.JWTService
 }
 
 type WebhookHandler struct {
@@ -32,7 +35,12 @@ func NewWebhookHandlers(router *http.ServeMux, deps WebhookHandlerDeps) {
 		}),
 	}
 
-	router.HandleFunc("POST /stripe/webhook", handler.handleWebhook())
+	// Middlewares
+	createMiddleware := middleware.Chain(
+		middleware.IsAuthed(deps.JWTService),
+	)
+
+	router.Handle("POST /stripe/webhook", createMiddleware(handler.handleWebhook()))
 }
 
 func (h *WebhookHandler) handleWebhook() http.HandlerFunc {

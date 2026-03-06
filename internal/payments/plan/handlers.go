@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"adv/go-http/internal/jwt"
+	"adv/go-http/pkg/middleware"
 	"adv/go-http/pkg/redis"
 	"adv/go-http/pkg/response"
 )
@@ -16,6 +18,7 @@ const plansCacheTTL = 30 * 24 * time.Hour
 type PlanHandlerDeps struct {
 	PlanRepository *PlanRepository
 	Redis          *redis.Redis
+	JWTService     *jwt.JWTService
 }
 
 type PlanHandler struct {
@@ -33,7 +36,11 @@ func NewPlanHandler(router *http.ServeMux, deps PlanHandlerDeps) {
 		redis:          deps.Redis,
 	}
 
-	router.HandleFunc("GET /plans", handler.getPlans())
+	authMiddleware := middleware.Chain(
+		middleware.IsAuthed(deps.JWTService),
+	)
+
+	router.Handle("GET /plans", authMiddleware(handler.getPlans()))
 }
 
 func (h *PlanHandler) getPlans() http.HandlerFunc {
