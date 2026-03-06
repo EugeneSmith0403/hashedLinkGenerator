@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"adv/go-http/api"
+	"adv/go-http/cmd/shared"
 	"adv/go-http/configs"
 	"adv/go-http/internal/account"
 	"adv/go-http/internal/auth"
@@ -150,7 +151,7 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 		JWTService:      a.svc.jwt,
 		StatsRepository: a.repos.stats,
 		StatsService:    a.svc.stats,
-		Redis: a.redis,
+		Redis:           a.redis,
 	})
 	account.NewAccountHandler(router, account.AccountHandlerDeps{
 		AccountService: a.svc.account,
@@ -178,12 +179,14 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 	plan.NewPlanHandler(router, plan.PlanHandlerDeps{
 		PlanRepository: a.repos.plan,
 		Redis:          a.redis,
+		JWTService:     a.svc.jwt,
 	})
 	webhook.NewWebhookHandlers(router, webhook.WebhookHandlerDeps{
 		PaymentService:         a.svc.payment,
 		CustomerAccountService: a.svc.customerAcct,
 		InvoiceService:         a.svc.invoice,
 		SubscriptionService:    a.svc.subscription,
+		JWTService:             a.svc.jwt,
 	})
 
 	api.RegisterDocsRoutes(router, "api/openapi.yaml")
@@ -197,15 +200,8 @@ func App(cfg *configs.Config) http.Handler {
 	return middleware.Chain(middleware.Cors, middleware.Logging)(router)
 }
 
-func loadConfigs(config ...*configs.Config) *configs.Config {
-	if len(config) > 0 {
-		return config[0]
-	}
-	return configs.LoadConfig()
-}
-
 func main() {
-	configs := loadConfigs()
+	configs := shared.LoadConfigs()
 
 	server := manners.NewWithServer(&http.Server{
 		Addr:    ":8081",

@@ -17,3 +17,4 @@ frontend/.env.*.local
 /.claude
 /cmd/gen_webhook_sig
 /cmd/gen_webhook_sig/main.go
+/rabbitmq-data
