@@ -31,6 +31,12 @@ export default defineNuxtConfig({
     strategy: 'prefix_except_default',
     langDir: 'locales/',
     lazy: true,
+    detectBrowserLanguage: {
+      useCookie: true,
+      cookieKey: 'i18n_locale',
+      redirectOn: 'root',
+      alwaysRedirect: false,
+    },
   },
 
   pinia: {

@@ -7,6 +7,7 @@ import { useMutation, useQueryClient } from '@tanstack/vue-query'
 const { t } = useI18n()
 const auth = useAuthStore()
 const router = useRouter()
+const localePath = useLocalePath()
 const queryClient = useQueryClient()
 
 const { handleSubmit, errors } = useForm({
@@ -21,7 +22,7 @@ const { mutate, isPending, error } = useMutation({
   onSuccess(data) {
     queryClient.clear()
     auth.setAuth(data.token, data.email)
-    router.push('/dashboard')
+    router.push(localePath('/dashboard'))
   },
 })
 

@@ -7,6 +7,7 @@ import { useMutation } from '@tanstack/vue-query'
 const { t } = useI18n()
 const auth = useAuthStore()
 const router = useRouter()
+const localePath = useLocalePath()
 
 const { handleSubmit, errors } = useForm({
   validationSchema: toTypedSchema(registerSchema),
@@ -22,7 +23,7 @@ const { mutate, isPending, error } = useMutation({
   async onSuccess(data) {
     auth.setAuth(data.token, data.email)
     await useAccountService().create()
-    router.push('/dashboard')
+    router.push(localePath('/dashboard'))
   },
 })
 

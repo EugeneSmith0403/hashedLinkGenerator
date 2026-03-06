@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"syscall"
 
+	"adv/go-http/api"
 	"adv/go-http/configs"
 	"adv/go-http/internal/account"
 	"adv/go-http/internal/auth"
@@ -184,6 +185,8 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 		InvoiceService:         a.svc.invoice,
 		SubscriptionService:    a.svc.subscription,
 	})
+
+	api.RegisterDocsRoutes(router, "api/openapi.yaml")
 }
 
 func App(cfg *configs.Config) http.Handler {

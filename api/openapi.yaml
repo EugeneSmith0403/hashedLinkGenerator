@@ -1,0 +1,612 @@
+openapi: "3.0.0"
+info:
+  title: go-adv-http API
+  version: "1.0.0"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    AuthResponse:
+      type: object
+      properties:
+        email:
+          type: string
+        token:
+          type: string
+
+    Plan:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        cost:
+          type: number
+          format: float
+        currency:
+          type: string
+        intervalMonths:
+          type: integer
+        isActive:
+          type: boolean
+        stripePriceId:
+          type: string
+        stripeProductId:
+          type: string
+
+    Link:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        url:
+          type: string
+        hash:
+          type: string
+
+    Account:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        accountStatus:
+          type: string
+          enum: [active, inactive, pending, banned]
+        provider:
+          type: string
+          enum: [stripe, paypal, yookassa]
+        customerId:
+          type: string
+
+    Subscription:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        planId:
+          type: integer
+        billingId:
+          type: string
+        customerId:
+          type: string
+        status:
+          type: string
+          enum: [active, canceled, past_due, trialing, unpaid, incomplete, incomplete_expired, paused]
+        currentPeriodStart:
+          type: string
+          format: date-time
+        currentPeriodEnd:
+          type: string
+          format: date-time
+        cancelAt:
+          type: string
+          format: date-time
+          nullable: true
+        canceledAt:
+          type: string
+          format: date-time
+          nullable: true
+        trialStart:
+          type: string
+          format: date-time
+          nullable: true
+        trialEnd:
+          type: string
+          format: date-time
+          nullable: true
+
+    Payment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        accountId:
+          type: integer
+        planId:
+          type: integer
+          nullable: true
+        subscriptionId:
+          type: integer
+          nullable: true
+        paymentIntentId:
+          type: string
+        chargeId:
+          type: string
+          nullable: true
+        amount:
+          type: integer
+        platformFee:
+          type: integer
+        netAmount:
+          type: integer
+        currency:
+          type: string
+        status:
+          type: string
+        paymentMethodType:
+          type: string
+        failureCode:
+          type: string
+        failureMessage:
+          type: string
+
+    Stats:
+      type: object
+      properties:
+        id:
+          type: integer
+        linkId:
+          type: integer
+        clicks:
+          type: integer
+        date:
+          type: string
+          format: date
+
+    StatsGroupByDate:
+      type: object
+      properties:
+        clicks:
+          type: integer
+        date:
+          type: string
+          format: date
+
+paths:
+  # ── Auth ────────────────────────────────────────────────────────────────────
+  /auth/login:
+    post:
+      operationId: Login
+      summary: Login with email and password
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+
+  /auth/register:
+    post:
+      operationId: Register
+      summary: Register a new user
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "409":
+          description: User already exists
+
+  # ── Links ───────────────────────────────────────────────────────────────────
+  /links:
+    get:
+      operationId: GetLinks
+      summary: List user's links
+      tags: [links]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Link"
+        "401":
+          description: Unauthorized
+
+  /link:
+    post:
+      operationId: CreateLink
+      summary: Create a new short link (requires active subscription)
+      tags: [links]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Link"
+        "401":
+          description: Unauthorized
+
+  /link/{id}:
+    patch:
+      operationId: UpdateLink
+      summary: Update a link
+      tags: [links]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url:
+                  type: string
+                  format: uri
+                hash:
+                  type: string
+      responses:
+        "201":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Link"
+        "401":
+          description: Unauthorized
+    delete:
+      operationId: DeleteLink
+      summary: Delete a link
+      tags: [links]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          description: Unauthorized
+
+  /{hash}:
+    get:
+      operationId: RedirectByHash
+      summary: Redirect to original URL by short hash
+      tags: [links]
+      parameters:
+        - name: hash
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "307":
+          description: Redirect to original URL
+        "400":
+          description: Hash not found
+
+  # ── Plans ───────────────────────────────────────────────────────────────────
+  /plans:
+    get:
+      operationId: GetPlans
+      summary: List active subscription plans
+      tags: [plans]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Plan"
+
+  # ── Account ─────────────────────────────────────────────────────────────────
+  /account:
+    post:
+      operationId: CreateAccount
+      summary: Create a Stripe customer account
+      tags: [account]
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "401":
+          description: Unauthorized
+    patch:
+      operationId: UpdateAccount
+      summary: Update account info
+      tags: [account]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email]
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                  format: email
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "401":
+          description: Unauthorized
+
+  # ── Subscriptions ────────────────────────────────────────────────────────────
+  /subscriptions/me:
+    get:
+      operationId: GetMySubscription
+      summary: Get current user's subscription
+      tags: [subscriptions]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+        "204":
+          description: No active subscription
+        "401":
+          description: Unauthorized
+
+  /subscriptions/method:
+    post:
+      operationId: SetupPaymentMethod
+      summary: Create Stripe SetupIntent to attach a payment method
+      tags: [subscriptions]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clientSecret:
+                    type: string
+
+  /subscriptions:
+    post:
+      operationId: CreateSubscription
+      summary: Create a subscription for a plan
+      tags: [subscriptions]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [planId]
+              properties:
+                planId:
+                  type: integer
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+        "401":
+          description: Unauthorized
+
+  /subscriptions/cancel:
+    patch:
+      operationId: CancelSubscription
+      summary: Cancel current subscription at period end
+      tags: [subscriptions]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Canceled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+        "401":
+          description: Unauthorized
+        "404":
+          description: Subscription not found
+
+  # ── Payments ─────────────────────────────────────────────────────────────────
+  /payments:
+    get:
+      operationId: GetPayments
+      summary: Get user's payment history
+      tags: [payments]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Payment"
+        "401":
+          description: Unauthorized
+
+  # ── Stats ────────────────────────────────────────────────────────────────────
+  /stats:
+    get:
+      operationId: GetStats
+      summary: Get link stats
+      tags: [stats]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: linkId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Stats"
+        "401":
+          description: Unauthorized
+
+  /stats/clicks:
+    get:
+      operationId: GetClickStats
+      summary: Get click stats grouped by date
+      tags: [stats]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StatsGroupByDate"
+        "401":
+          description: Unauthorized
+
+  # ── Stripe ───────────────────────────────────────────────────────────────────
+  /stripe/paymentIntent:
+    post:
+      operationId: CreatePaymentIntent
+      summary: Create a Stripe PaymentIntent
+      tags: [stripe]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cardType, planId]
+              properties:
+                cardType:
+                  type: string
+                planId:
+                  type: integer
+      responses:
+        "201":
+          description: Created
+        "401":
+          description: Unauthorized
+
+  /stripe/webhook:
+    post:
+      operationId: StripeWebhook
+      summary: Stripe webhook endpoint (called by Stripe, not by clients)
+      tags: [stripe]
+      responses:
+        "200":
+          description: OK
