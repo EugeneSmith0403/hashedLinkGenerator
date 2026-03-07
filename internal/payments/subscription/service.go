@@ -199,6 +199,7 @@ func (s *SubscriptionService) CreateFromPaymentIntent(pi *stripeGo.PaymentIntent
 	if err != nil {
 		return nil, fmt.Errorf("invalid user_id in metadata: %w", err)
 	}
+	userID := uint(userID64)
 
 	planIDStr, ok := pi.Metadata["plan_id"]
 	if !ok {
@@ -210,7 +211,7 @@ func (s *SubscriptionService) CreateFromPaymentIntent(pi *stripeGo.PaymentIntent
 	}
 	planID := uint(planID64)
 
-	existing, err := s.subscriptionRepository.GetByBillingID(pi.ID)
+	existing, err := s.subscriptionRepository.GetActiveByUserID(userID)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +234,7 @@ func (s *SubscriptionService) CreateFromPaymentIntent(pi *stripeGo.PaymentIntent
 
 	start := time.Unix(pi.Created, 0)
 	entity := &Subscription{
-		UserID:             uint(userID64),
+		UserID:             userID,
 		PlanID:             planID,
 		BillingID:          pi.ID,
 		CustomerID:         customerID,

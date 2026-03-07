@@ -50,6 +50,18 @@ func (s *InvoiceService) CreatePaymentAndInvoiceFromStripeInvoice(inv *stripeGo.
 		return nil
 	}
 
+	if accountID == 0 {
+		if p, lookupErr := s.paymentRepository.GetByPaymentIntentID(piID); lookupErr == nil && p != nil {
+			accountID = p.AccountID
+			if saved.AccountID == 0 && accountID != 0 {
+				saved.AccountID = accountID
+				if saved, err = s.invoiceRepository.Update(saved); err != nil {
+					return fmt.Errorf("update invoice accountID: %w", err)
+				}
+			}
+		}
+	}
+
 	return s.syncPaymentForInvoice(piID, accountID, saved, inv)
 }
 
@@ -87,6 +99,9 @@ func (s *InvoiceService) CreateInvoiceForPayment(pi *stripeGo.PaymentIntent) err
 	}
 	if payment == nil {
 		return fmt.Errorf("payment not found for intent: %s", pi.ID)
+	}
+	if payment.InvoiceID != nil {
+		return nil
 	}
 
 	paid, err := s.createStripeInvoice(pi.Customer.ID, pi.Amount, string(pi.Currency))

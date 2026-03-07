@@ -2,6 +2,7 @@ package invoice
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -112,10 +113,22 @@ func (s *InvoiceService) createStripeInvoice(customerID string, amount int64, cu
 		return nil, fmt.Errorf("finalize invoice: %w", err)
 	}
 
+	// Stripe may auto-charge on finalization if customer has a default payment method
+	if finalized.Status == stripeGo.InvoiceStatusPaid {
+		return finalized, nil
+	}
+
 	paid, err := s.stripeProvider.V1Invoices.Pay(s.ctx, finalized.ID, &stripeGo.InvoicePayParams{
 		PaidOutOfBand: stripe.Bool(true),
 	})
 	if err != nil {
+		var stripeErr *stripeGo.Error
+		if errors.As(err, &stripeErr) && stripeErr.HTTPStatusCode == 400 {
+			current, getErr := s.stripeProvider.V1Invoices.Retrieve(s.ctx, finalized.ID, nil)
+			if getErr == nil && current.Status == stripeGo.InvoiceStatusPaid {
+				return current, nil
+			}
+		}
 		return nil, fmt.Errorf("mark invoice paid: %w", err)
 	}
 
@@ -123,6 +136,18 @@ func (s *InvoiceService) createStripeInvoice(customerID string, amount int64, cu
 }
 
 func (s *InvoiceService) saveLocalInvoice(paid *stripeGo.Invoice, accountID uint) (*Invoice, error) {
+	existing, err := s.invoiceRepository.GetByBillingID(paid.ID)
+	if err != nil {
+		return nil, fmt.Errorf("check existing invoice: %w", err)
+	}
+	if existing != nil {
+		if existing.AccountID == 0 && accountID != 0 {
+			existing.AccountID = accountID
+			return s.invoiceRepository.Update(existing)
+		}
+		return existing, nil
+	}
+
 	metaJSON, _ := json.Marshal(paid)
 	localInv := &Invoice{
 		AccountID:        accountID,

@@ -6,33 +6,63 @@ import (
 	"log"
 	"strconv"
 
+	"adv/go-http/internal/consts"
+	"adv/go-http/internal/models"
 	invoiceService "adv/go-http/internal/payments/invoice"
 	stripeServices "adv/go-http/internal/payments/stripe/services"
 	"adv/go-http/internal/payments/subscription"
+	rabbitmq "adv/go-http/pkg/rabbitMq"
 
 	stripeGo "github.com/stripe/stripe-go/v84"
 )
 
 type WebhookServiceDeps struct {
-	PaymentService         *stripeServices.PaymentService
 	CustomerAccountService *stripeServices.CustomerAccountService
 	InvoiceService         *invoiceService.InvoiceService
 	SubscriptionService    *subscription.SubscriptionService
+	RabbitMq               *rabbitmq.RabbitMq
 }
 
 type WebhookService struct {
-	paymentService         *stripeServices.PaymentService
 	customerAccountService *stripeServices.CustomerAccountService
 	invoiceService         *invoiceService.InvoiceService
 	subscriptionService    *subscription.SubscriptionService
+	rabbitMq               *rabbitmq.RabbitMq
 }
 
 func NewWebhookService(deps WebhookServiceDeps) *WebhookService {
+	_, err := deps.RabbitMq.CreateExchange(&rabbitmq.ExchangeOptions{
+		Name:    consts.PaymentIntentExchange,
+		Type:    "direct",
+		Durable: true,
+	})
+
+	if err != nil {
+		fmt.Print(err)
+	}
+
+	_, _, errQ := deps.RabbitMq.CreateQueueWithBinding(&rabbitmq.QueueWithBindingOptions{
+		QueueOptions: &rabbitmq.QueueOptions{
+			Name:       consts.PaymentIntentQueueSucceed,
+			Durable:    true,
+			AutoDelete: false,
+			Exclusive:  false,
+			NoWait:     false,
+			Args:       nil,
+		},
+		Exchange:   consts.PaymentIntentExchange,
+		RoutingKey: consts.PaymentIntentRouting,
+	})
+
+	if errQ != nil {
+		fmt.Print(errQ)
+	}
+
 	return &WebhookService{
-		paymentService:         deps.PaymentService,
 		customerAccountService: deps.CustomerAccountService,
 		invoiceService:         deps.InvoiceService,
 		subscriptionService:    deps.SubscriptionService,
+		rabbitMq:               deps.RabbitMq,
 	}
 }
 
@@ -86,62 +116,22 @@ func (s *WebhookService) HandlePaymentIntentEvent(event *stripeGo.Event) error {
 		return err
 	}
 
-	switch event.Type {
-	case stripeGo.EventTypePaymentIntentCreated:
-		log.Printf("[stripe] payment_intent.created: id=%s amount=%d currency=%s\n", pi.ID, pi.Amount, pi.Currency)
+	log.Printf("[stripe] %s: id=%s amount=%d\n", event.Type, pi.ID, pi.Amount)
 
-	case stripeGo.EventTypePaymentIntentProcessing:
-		log.Printf("[stripe] payment_intent.processing: id=%s\n", pi.ID)
-
-	case stripeGo.EventTypePaymentIntentSucceeded:
-		log.Printf("[stripe] payment_intent.succeeded: id=%s amount=%d\n", pi.ID, pi.Amount)
-
-		if _, ok := pi.Metadata["payment_id"]; !ok {
-			// subscription-generated PI — handled by invoice.payment_succeeded
-			break
-		}
-		updatedPi, err := s.paymentService.UpdatePaymentFromIntent(&pi)
-		if err != nil {
-			log.Printf("[stripe] failed to update payment for payment_intent %s: %v\n", pi.ID, err)
-			break
-		}
-
-		sub, subErr := s.subscriptionService.CreateFromPaymentIntent(&pi)
-		if subErr != nil {
-			log.Printf("[stripe] failed to create subscription for payment_intent %s: %v\n", pi.ID, subErr)
-		} else if sub != nil {
-			if linkErr := s.paymentService.LinkSubscription(pi.ID, sub.ID); linkErr != nil {
-				log.Printf("[stripe] failed to link subscription %d to payment_intent %s: %v\n", sub.ID, pi.ID, linkErr)
-			}
-		}
-
-		// TODO send to invoice queue
-		if err := s.invoiceService.CreateInvoiceForPayment(updatedPi); err != nil {
-			log.Printf("[stripe] failed to create invoice for payment_intent %s: %v\n", pi.ID, err)
-		}
-
-	case stripeGo.EventTypePaymentIntentPaymentFailed:
-		var reason string
-		if pi.LastPaymentError != nil {
-			reason = pi.LastPaymentError.Msg
-		}
-		log.Printf("[stripe] payment_intent.payment_failed: id=%s reason=%s\n", pi.ID, reason)
-		if _, err := s.paymentService.UpdatePaymentFromIntent(&pi); err != nil {
-			return err
-		}
-
-	case stripeGo.EventTypePaymentIntentCanceled:
-		log.Printf("[stripe] payment_intent.canceled: id=%s\n", pi.ID)
-
-	case stripeGo.EventTypePaymentIntentAmountCapturableUpdated:
-		log.Printf("[stripe] payment_intent.amount_capturable_updated: id=%s capturable=%d\n", pi.ID, pi.AmountCapturable)
-
-	case stripeGo.EventTypePaymentIntentRequiresAction:
-		log.Printf("[stripe] payment_intent.requires_action: id=%s\n", pi.ID)
-
-	case stripeGo.EventTypePaymentIntentPartiallyFunded:
-		log.Printf("[stripe] payment_intent.partially_funded: id=%s received=%d\n", pi.ID, pi.AmountReceived)
+	body, err := json.Marshal(models.PaymentIntentMessage{
+		EventType: models.PaymentIntentEventType(event.Type),
+		Data:      pi,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal payment intent message: %w", err)
 	}
+
+	s.rabbitMq.Publish(&rabbitmq.PublisherOptions{
+		Exchange:    consts.PaymentIntentExchange,
+		RoutingKey:  consts.PaymentIntentRouting,
+		Body:        body,
+		ContentType: "application/json",
+	})
 
 	return nil
 }

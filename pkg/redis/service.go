@@ -24,7 +24,9 @@ func (r Redis) Get(key string, defaultValue ...string) string {
 	recievedKey, err := r.client.Get(context.Background(), key).Result()
 
 	if err != nil {
-		log.Printf("[redis] Get key=%s error: %v", key, err)
+		if err != redis.Nil {
+			log.Printf("[redis] Get key=%s error: %v", key, err)
+		}
 		if len(defaultValue) == 0 {
 			return ""
 		}
@@ -104,4 +106,8 @@ func (r Redis) SIsMember(key string, member any) bool {
 		log.Printf("[redis] SIsMember key=%s error: %v", key, err)
 	}
 	return result
+}
+
+func (r Redis) Close() {
+	r.client.Close()
 }

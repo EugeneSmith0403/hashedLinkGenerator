@@ -29,6 +29,7 @@ import (
 	"adv/go-http/pkg/event"
 	"adv/go-http/pkg/helpers"
 	"adv/go-http/pkg/middleware"
+	rabbitmq "adv/go-http/pkg/rabbitMq"
 	pkgRedis "adv/go-http/pkg/redis"
 
 	"github.com/braintree/manners"
@@ -60,15 +61,18 @@ type services struct {
 
 type app struct {
 	cfg      *configs.Config
+	db       *db.Db
 	repos    *repositories
 	svc      *services
 	redis    *pkgRedis.Redis
 	eventBus *event.EventBus
+	rabbitMq *rabbitmq.RabbitMq
 }
 
 func newApp(cfg *configs.Config) *app {
 	database := db.NewDb(cfg)
 	eventBus := event.NewEventBus()
+	rabbitMq := rabbitmq.NewRabbitMq(cfg.RabbitMq)
 
 	cacheMinutes, _ := strconv.Atoi(cfg.Redis.Cache)
 	redis := pkgRedis.NewRedis(&goRedis.Options{
@@ -126,7 +130,7 @@ func newApp(cfg *configs.Config) *app {
 		}),
 	}
 
-	return &app{cfg: cfg, repos: repos, svc: svc, redis: redis, eventBus: eventBus}
+	return &app{cfg: cfg, db: database, repos: repos, svc: svc, redis: redis, eventBus: eventBus, rabbitMq: rabbitMq}
 }
 
 func (a *app) registerHandlers(router *http.ServeMux) {
@@ -186,7 +190,7 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 		CustomerAccountService: a.svc.customerAcct,
 		InvoiceService:         a.svc.invoice,
 		SubscriptionService:    a.svc.subscription,
-		JWTService:             a.svc.jwt,
+		RabbitMq:               a.rabbitMq,
 	})
 
 	api.RegisterDocsRoutes(router, "api/openapi.yaml")
@@ -203,9 +207,19 @@ func App(cfg *configs.Config) http.Handler {
 func main() {
 	configs := shared.LoadConfigs()
 
+	a := newApp(configs)
+	defer a.redis.Close()
+	defer a.rabbitMq.Close()
+	defer a.db.Close()
+
+	router := http.NewServeMux()
+	a.registerHandlers(router)
+	go a.svc.stats.AddClick()
+	handler := middleware.Chain(middleware.Cors, middleware.Logging)(router)
+
 	server := manners.NewWithServer(&http.Server{
 		Addr:    ":8081",
-		Handler: App(configs),
+		Handler: handler,
 	})
 
 	if configs.Mode == "production" {
@@ -214,7 +228,7 @@ func main() {
 			signal.Notify(sigchan, os.Interrupt, syscall.SIGTERM)
 			<-sigchan
 			log.Print("Shutting down...")
-			manners.Close()
+			server.Close()
 		}()
 	}
 
