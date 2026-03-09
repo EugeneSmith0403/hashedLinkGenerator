@@ -10,6 +10,8 @@ import (
 	"adv/go-http/internal/account"
 	"adv/go-http/internal/consts"
 	invConsumer "adv/go-http/internal/consumers"
+	"adv/go-http/internal/locales"
+	"adv/go-http/internal/mailer"
 	"adv/go-http/internal/payments/invoice"
 	"adv/go-http/internal/payments/payment"
 	"adv/go-http/internal/payments/plan"
@@ -38,6 +40,15 @@ func main() {
 	invoiceRepo := invoice.NewInvoiceRepository(database)
 	accountRepo := account.NewAccountRepository(database)
 
+	m := mailer.NewMailer(mailer.MailerDeps{
+		LocalesFS:  locales.FS,
+		LocalesDir: "invoice/succeed",
+		Host:       cfg.Mailer.Host,
+		Port:       cfg.Mailer.Port,
+		User:       cfg.Mailer.User,
+		Password:   cfg.Mailer.Password,
+	})
+
 	consumer := invConsumer.NewInvoiceConsumer(&invConsumer.InvoiceConsumerDeps{
 		InvoiceSvc: invoice.NewInvoiceService(invoice.InvoiceServiceDeps{
 			StripeClient:           stripeClient,
@@ -53,6 +64,10 @@ func main() {
 			Ctx:                    context.Background(),
 		}),
 		AccountRepository: accountRepo,
+		PlanRepository:    planRepo,
+		Mailer:            m,
+		MailerFrom:        cfg.Mailer.From,
+		AppName:           "Go Adv",
 	})
 
 	msgs, err := rabbitMq.CreateConsumer(&rabbitmq.ConsumerOptions{
