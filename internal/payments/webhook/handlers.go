@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 
+	"adv/go-http/internal/account"
 	invoiceService "adv/go-http/internal/payments/invoice"
 	stripeServices "adv/go-http/internal/payments/stripe/services"
 	"adv/go-http/internal/payments/subscription"
@@ -15,6 +16,7 @@ type WebhookHandlerDeps struct {
 	CustomerAccountService *stripeServices.CustomerAccountService
 	InvoiceService         *invoiceService.InvoiceService
 	SubscriptionService    *subscription.SubscriptionService
+	AccountRepository      *account.AccountRepository
 	RabbitMq               *rabbitmq.RabbitMq
 }
 
@@ -30,6 +32,7 @@ func NewWebhookHandlers(router *http.ServeMux, deps WebhookHandlerDeps) {
 			CustomerAccountService: deps.CustomerAccountService,
 			InvoiceService:         deps.InvoiceService,
 			SubscriptionService:    deps.SubscriptionService,
+			AccountRepository:      deps.AccountRepository,
 			RabbitMq:               deps.RabbitMq,
 		}),
 	}

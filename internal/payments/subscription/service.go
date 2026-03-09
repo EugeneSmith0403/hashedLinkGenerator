@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"adv/go-http/internal/payments/plan"
+	"adv/go-http/internal/payments/payment"
 
 	"github.com/stripe/stripe-go/v84"
 	stripeGo "github.com/stripe/stripe-go/v84"
@@ -16,6 +17,7 @@ import (
 type SubscriptionServiceDeps struct {
 	SubscriptionRepository *SubscriptionRepository
 	PlanRepository         *plan.PlanRepository
+	PaymentRepository      *payment.PaymentRepository
 	StripeClient           *stripeGo.Client
 	Ctx                    context.Context
 }
@@ -23,6 +25,7 @@ type SubscriptionServiceDeps struct {
 type SubscriptionService struct {
 	subscriptionRepository *SubscriptionRepository
 	planRepository         *plan.PlanRepository
+	paymentRepository      *payment.PaymentRepository
 	stripeProvider         *stripeGo.Client
 	ctx                    context.Context
 }
@@ -31,6 +34,7 @@ func NewSubscriptionService(deps SubscriptionServiceDeps) *SubscriptionService {
 	return &SubscriptionService{
 		subscriptionRepository: deps.SubscriptionRepository,
 		planRepository:         deps.PlanRepository,
+		paymentRepository:      deps.PaymentRepository,
 		stripeProvider:         deps.StripeClient,
 		ctx:                    deps.Ctx,
 	}
@@ -91,28 +95,41 @@ func (s *SubscriptionService) CreateSubscription(userID, planID uint, customedId
 
 func (s *SubscriptionService) CancelSubscription(subId string) (*Subscription, error) {
 	canceledSub, err := s.stripeProvider.V1Subscriptions.Cancel(s.ctx, subId, nil)
-
 	if err != nil {
 		return nil, err
 	}
 
 	canceledAt := time.Now()
-
-	updatedData := &SubscriptionUpdate{
+	sub, err := s.subscriptionRepository.UpdateByBillingId(canceledSub.ID, &SubscriptionUpdate{
 		Status:     SubscriptionStatusCanceled,
 		CanceledAt: &canceledAt,
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	return s.subscriptionRepository.UpdateByBillingId(canceledSub.ID, updatedData)
+	if s.paymentRepository != nil {
+		_ = s.paymentRepository.CancelBySubscriptionID(sub.ID)
+	}
 
+	return sub, nil
 }
 
 func (s *SubscriptionService) MarkCanceled(billingID string) (*Subscription, error) {
 	canceledAt := time.Now()
-	return s.subscriptionRepository.UpdateByBillingId(billingID, &SubscriptionUpdate{
+	sub, err := s.subscriptionRepository.UpdateByBillingId(billingID, &SubscriptionUpdate{
 		Status:     SubscriptionStatusCanceled,
 		CanceledAt: &canceledAt,
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	if s.paymentRepository != nil {
+		_ = s.paymentRepository.CancelBySubscriptionID(sub.ID)
+	}
+
+	return sub, nil
 }
 
 func (s *SubscriptionService) GetByBillingID(billingID string) (*Subscription, error) {

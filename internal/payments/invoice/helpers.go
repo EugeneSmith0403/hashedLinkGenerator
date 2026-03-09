@@ -72,17 +72,41 @@ func (s *InvoiceService) syncPaymentForInvoice(piID string, accountID uint, save
 		return nil
 	}
 
+	// Fetch PaymentIntent with latest_charge to get chargeID and payment method type
+	var chargeID *string
+	var paymentMethodType string
+	piParams := &stripeGo.PaymentIntentRetrieveParams{}
+	piParams.AddExpand("latest_charge")
+	if pi, piErr := s.stripeProvider.V1PaymentIntents.Retrieve(s.ctx, piID, piParams); piErr == nil && pi.LatestCharge != nil {
+		chargeID = &pi.LatestCharge.ID
+		if pi.LatestCharge.PaymentMethodDetails != nil {
+			paymentMethodType = string(pi.LatestCharge.PaymentMethodDetails.Type)
+		}
+	}
+
+	// Get PlanID from local subscription
+	var planID *uint
+	if savedInv.SubscriptionID != nil && s.subscriptionRepository != nil {
+		if sub, subErr := s.subscriptionRepository.GetByID(*savedInv.SubscriptionID); subErr == nil && sub != nil {
+			planID = &sub.PlanID
+		}
+	}
+
 	metaPayJSON, _ := json.Marshal(inv.Metadata)
 	payment := &paymentmodels.Payment{
-		ID:               uuid.New(),
-		AccountID:        accountID,
-		InvoiceID:        &savedInv.ID,
-		PaymentIntentID:  piID,
-		Amount:           inv.AmountPaid,
-		NetAmount:        inv.AmountPaid,
-		Currency:         string(inv.Currency),
-		Status:           stripe.PaymentIntentStatusSucceeded,
-		ProviderMetadata: datatypes.JSON(metaPayJSON),
+		ID:                uuid.New(),
+		AccountID:         accountID,
+		InvoiceID:         &savedInv.ID,
+		SubscriptionID:    savedInv.SubscriptionID,
+		PlanID:            planID,
+		PaymentIntentID:   piID,
+		ChargeID:          chargeID,
+		Amount:            inv.AmountPaid,
+		NetAmount:         inv.AmountPaid,
+		Currency:          string(inv.Currency),
+		Status:            stripe.PaymentIntentStatusSucceeded,
+		PaymentMethodType: paymentMethodType,
+		ProviderMetadata:  datatypes.JSON(metaPayJSON),
 	}
 	_, err = s.paymentRepository.Create(payment)
 	return err

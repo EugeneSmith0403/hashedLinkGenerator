@@ -2,11 +2,7 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log"
-	"os"
-	"os/signal"
-	"syscall"
 
 	stripeGo "github.com/stripe/stripe-go/v84"
 
@@ -46,53 +42,27 @@ func main() {
 			PaymentRepository: paymentRepo,
 		}),
 		InvoiceSvc: invoice.NewInvoiceService(invoice.InvoiceServiceDeps{
-			StripeClient:      stripeClient,
-			InvoiceRepository: invoiceRepo,
-			PaymentRepository: paymentRepo,
+			StripeClient:           stripeClient,
+			InvoiceRepository:      invoiceRepo,
+			PaymentRepository:      paymentRepo,
+			SubscriptionRepository: subscriptionRepo,
 		}),
 		SubscriptionSvc: subscription.NewSubscriptionService(subscription.SubscriptionServiceDeps{
 			SubscriptionRepository: subscriptionRepo,
 			PlanRepository:         planRepo,
+			PaymentRepository:      paymentRepo,
 			StripeClient:           stripeClient,
 			Ctx:                    context.Background(),
 		}),
 	})
 
 	msgs, err := rabbitMq.CreateConsumer(&rabbitmq.ConsumerOptions{
-		Queue:   consts.PaymentIntentQueueSucceed,
+		Queue:   consts.PaymentIntentQueue,
 		AutoAck: false,
 	})
 	if err != nil {
 		log.Fatalf("[consumer] failed to create consumer: %v", err)
 	}
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-
-	log.Println("[consumer] waiting for payment_intent messages...")
-
-	for {
-		select {
-		case msg, ok := <-msgs:
-			if !ok {
-				log.Println("[consumer] channel closed")
-				return
-			}
-			if err := consumer.Handle(msg.Body); err != nil {
-				log.Printf("[consumer] failed to handle message: %v", err)
-				var stripeErr *stripeGo.Error
-				if errors.As(err, &stripeErr) && stripeErr.HTTPStatusCode == 400 {
-					log.Printf("[consumer] stripe 400, discarding message")
-					msg.Ack(false)
-					continue
-				}
-				msg.Nack(false, true)
-				continue
-			}
-			msg.Ack(false)
-		case <-quit:
-			log.Println("[consumer] shutting down...")
-			return
-		}
-	}
+	shared.RunConsumerLoop(msgs, consumer.Handle, "payment_intent")
 }

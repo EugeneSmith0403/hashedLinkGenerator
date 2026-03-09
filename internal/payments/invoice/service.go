@@ -5,30 +5,34 @@ import (
 	"fmt"
 
 	paymentrepo "adv/go-http/internal/payments/payment"
+	subscriptionrepo "adv/go-http/internal/payments/subscription"
 
 	"github.com/google/uuid"
 	stripeGo "github.com/stripe/stripe-go/v84"
 )
 
 type InvoiceServiceDeps struct {
-	StripeClient      *stripeGo.Client
-	InvoiceRepository *InvoiceRepository
-	PaymentRepository *paymentrepo.PaymentRepository
+	StripeClient           *stripeGo.Client
+	InvoiceRepository      *InvoiceRepository
+	PaymentRepository      *paymentrepo.PaymentRepository
+	SubscriptionRepository *subscriptionrepo.SubscriptionRepository
 }
 
 type InvoiceService struct {
-	stripeProvider    *stripeGo.Client
-	invoiceRepository *InvoiceRepository
-	paymentRepository *paymentrepo.PaymentRepository
-	ctx               context.Context
+	stripeProvider         *stripeGo.Client
+	invoiceRepository      *InvoiceRepository
+	paymentRepository      *paymentrepo.PaymentRepository
+	subscriptionRepository *subscriptionrepo.SubscriptionRepository
+	ctx                    context.Context
 }
 
 func NewInvoiceService(deps InvoiceServiceDeps) *InvoiceService {
 	return &InvoiceService{
-		stripeProvider:    deps.StripeClient,
-		invoiceRepository: deps.InvoiceRepository,
-		paymentRepository: deps.PaymentRepository,
-		ctx:               context.Background(),
+		stripeProvider:         deps.StripeClient,
+		invoiceRepository:      deps.InvoiceRepository,
+		paymentRepository:      deps.PaymentRepository,
+		subscriptionRepository: deps.SubscriptionRepository,
+		ctx:                    context.Background(),
 	}
 }
 

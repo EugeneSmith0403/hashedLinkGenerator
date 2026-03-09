@@ -113,6 +113,7 @@ func newApp(cfg *configs.Config) *app {
 		subscription: subscription.NewSubscriptionService(subscription.SubscriptionServiceDeps{
 			SubscriptionRepository: repos.subscription,
 			PlanRepository:         repos.plan,
+			PaymentRepository:      repos.payment,
 			StripeClient:           stripeClient,
 			Ctx:                    context.Background(),
 		}),
@@ -124,9 +125,10 @@ func newApp(cfg *configs.Config) *app {
 		}),
 		customerAcct: customerAcct,
 		invoice: invoice.NewInvoiceService(invoice.InvoiceServiceDeps{
-			StripeClient:      stripeClient,
-			InvoiceRepository: repos.invoice,
-			PaymentRepository: repos.payment,
+			StripeClient:           stripeClient,
+			InvoiceRepository:      repos.invoice,
+			PaymentRepository:      repos.payment,
+			SubscriptionRepository: repos.subscription,
 		}),
 	}
 
@@ -190,6 +192,7 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 		CustomerAccountService: a.svc.customerAcct,
 		InvoiceService:         a.svc.invoice,
 		SubscriptionService:    a.svc.subscription,
+		AccountRepository:      a.repos.account,
 		RabbitMq:               a.rabbitMq,
 	})
 
