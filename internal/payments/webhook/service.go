@@ -2,37 +2,56 @@ package webhook
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
-	"strconv"
 
+	"adv/go-http/internal/account"
+	"adv/go-http/internal/models"
 	invoiceService "adv/go-http/internal/payments/invoice"
 	stripeServices "adv/go-http/internal/payments/stripe/services"
 	"adv/go-http/internal/payments/subscription"
+	"adv/go-http/internal/publishers"
+	rabbitmq "adv/go-http/pkg/rabbitMq"
 
 	stripeGo "github.com/stripe/stripe-go/v84"
 )
 
 type WebhookServiceDeps struct {
-	PaymentService         *stripeServices.PaymentService
 	CustomerAccountService *stripeServices.CustomerAccountService
 	InvoiceService         *invoiceService.InvoiceService
 	SubscriptionService    *subscription.SubscriptionService
+	AccountRepository      *account.AccountRepository
+	RabbitMq               *rabbitmq.RabbitMq
 }
 
 type WebhookService struct {
-	paymentService         *stripeServices.PaymentService
 	customerAccountService *stripeServices.CustomerAccountService
 	invoiceService         *invoiceService.InvoiceService
 	subscriptionService    *subscription.SubscriptionService
+	accountRepository      *account.AccountRepository
+	rabbitMq               *rabbitmq.RabbitMq
+	paymentPublisher       *publishers.PaymentPublisher
+	subscriptionPublisher  *publishers.SubscriptionPublisher
+	invoicePublisher       *publishers.InvoicePublisher
 }
 
 func NewWebhookService(deps WebhookServiceDeps) *WebhookService {
+	paymentPub := publishers.NewPaymentPublisher(deps.RabbitMq)
+	subscriptionPub := publishers.NewSubscriptionPublisher(deps.RabbitMq)
+	invoicePub := publishers.NewInvoicePublisher(deps.RabbitMq)
+
+	paymentPub.CreateExchangeAndQueue()
+	subscriptionPub.CreateExchangeAndQueue()
+	invoicePub.CreateExchangeAndQueue()
+
 	return &WebhookService{
-		paymentService:         deps.PaymentService,
 		customerAccountService: deps.CustomerAccountService,
 		invoiceService:         deps.InvoiceService,
 		subscriptionService:    deps.SubscriptionService,
+		accountRepository:      deps.AccountRepository,
+		rabbitMq:               deps.RabbitMq,
+		paymentPublisher:       paymentPub,
+		subscriptionPublisher:  subscriptionPub,
+		invoicePublisher:       invoicePub,
 	}
 }
 
@@ -81,66 +100,21 @@ func (s *WebhookService) IsSubscriptionEvent(t stripeGo.EventType) bool {
 }
 
 func (s *WebhookService) HandlePaymentIntentEvent(event *stripeGo.Event) error {
-	var pi stripeGo.PaymentIntent
-	if err := json.Unmarshal(event.Data.Raw, &pi); err != nil {
+	err := s.paymentPublisher.PublishDataRawToQueue(models.PaymentIntentEventType(event.Type), event.Data)
+
+	if err != nil {
 		return err
 	}
 
-	switch event.Type {
-	case stripeGo.EventTypePaymentIntentCreated:
-		log.Printf("[stripe] payment_intent.created: id=%s amount=%d currency=%s\n", pi.ID, pi.Amount, pi.Currency)
+	return nil
+}
 
-	case stripeGo.EventTypePaymentIntentProcessing:
-		log.Printf("[stripe] payment_intent.processing: id=%s\n", pi.ID)
+func (s *WebhookService) HandleSubscriptionEvent(event *stripeGo.Event) error {
 
-	case stripeGo.EventTypePaymentIntentSucceeded:
-		log.Printf("[stripe] payment_intent.succeeded: id=%s amount=%d\n", pi.ID, pi.Amount)
+	err := s.subscriptionPublisher.PublishDataRawToQueue(models.SubscriptionEventType(event.Type), event.Data)
 
-		if _, ok := pi.Metadata["payment_id"]; !ok {
-			// subscription-generated PI — handled by invoice.payment_succeeded
-			break
-		}
-		updatedPi, err := s.paymentService.UpdatePaymentFromIntent(&pi)
-		if err != nil {
-			log.Printf("[stripe] failed to update payment for payment_intent %s: %v\n", pi.ID, err)
-			break
-		}
-
-		sub, subErr := s.subscriptionService.CreateFromPaymentIntent(&pi)
-		if subErr != nil {
-			log.Printf("[stripe] failed to create subscription for payment_intent %s: %v\n", pi.ID, subErr)
-		} else if sub != nil {
-			if linkErr := s.paymentService.LinkSubscription(pi.ID, sub.ID); linkErr != nil {
-				log.Printf("[stripe] failed to link subscription %d to payment_intent %s: %v\n", sub.ID, pi.ID, linkErr)
-			}
-		}
-
-		// TODO send to invoice queue
-		if err := s.invoiceService.CreateInvoiceForPayment(updatedPi); err != nil {
-			log.Printf("[stripe] failed to create invoice for payment_intent %s: %v\n", pi.ID, err)
-		}
-
-	case stripeGo.EventTypePaymentIntentPaymentFailed:
-		var reason string
-		if pi.LastPaymentError != nil {
-			reason = pi.LastPaymentError.Msg
-		}
-		log.Printf("[stripe] payment_intent.payment_failed: id=%s reason=%s\n", pi.ID, reason)
-		if _, err := s.paymentService.UpdatePaymentFromIntent(&pi); err != nil {
-			return err
-		}
-
-	case stripeGo.EventTypePaymentIntentCanceled:
-		log.Printf("[stripe] payment_intent.canceled: id=%s\n", pi.ID)
-
-	case stripeGo.EventTypePaymentIntentAmountCapturableUpdated:
-		log.Printf("[stripe] payment_intent.amount_capturable_updated: id=%s capturable=%d\n", pi.ID, pi.AmountCapturable)
-
-	case stripeGo.EventTypePaymentIntentRequiresAction:
-		log.Printf("[stripe] payment_intent.requires_action: id=%s\n", pi.ID)
-
-	case stripeGo.EventTypePaymentIntentPartiallyFunded:
-		log.Printf("[stripe] payment_intent.partially_funded: id=%s received=%d\n", pi.ID, pi.AmountReceived)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -151,90 +125,5 @@ func (s *WebhookService) IsInvoiceEvent(t stripeGo.EventType) bool {
 }
 
 func (s *WebhookService) HandleInvoiceEvent(event *stripeGo.Event) error {
-	var inv stripeGo.Invoice
-	if err := json.Unmarshal(event.Data.Raw, &inv); err != nil {
-		return err
-	}
-
-	switch event.Type {
-	case stripeGo.EventTypeInvoicePaymentSucceeded:
-		log.Printf("[stripe] invoice.payment_succeeded: id=%s amount=%d\n", inv.ID, inv.AmountPaid)
-
-		var accountID uint
-		var subscriptionID *uint
-		if inv.Parent != nil &&
-			inv.Parent.SubscriptionDetails != nil &&
-			inv.Parent.SubscriptionDetails.Subscription != nil {
-			billingID := inv.Parent.SubscriptionDetails.Subscription.ID
-			sub, err := s.subscriptionService.GetByBillingID(billingID)
-			if err != nil {
-				return fmt.Errorf("get subscription: %w", err)
-			}
-			if sub != nil {
-				accountID = sub.UserID
-				subscriptionID = &sub.ID
-			}
-		}
-
-		if err := s.invoiceService.CreatePaymentAndInvoiceFromStripeInvoice(&inv, accountID, subscriptionID); err != nil {
-			log.Printf("[stripe] failed to create payment/invoice for invoice %s: %v\n", inv.ID, err)
-		}
-	}
-
-	return nil
-}
-
-func (s *WebhookService) HandleSubscriptionEvent(event *stripeGo.Event) error {
-	var sub stripeGo.Subscription
-	if err := json.Unmarshal(event.Data.Raw, &sub); err != nil {
-		return err
-	}
-
-	switch event.Type {
-	case stripeGo.EventTypeCustomerSubscriptionCreated:
-		log.Printf("[stripe] subscription.created: id=%s status=%s\n", sub.ID, sub.Status)
-
-		existing, err := s.subscriptionService.GetByBillingID(sub.ID)
-		if err != nil {
-			return err
-		}
-
-		var localSub *subscription.Subscription
-		if existing == nil {
-			userIDStr := sub.Metadata["user_id"]
-			planIDStr := sub.Metadata["plan_id"]
-			userID64, uErr := strconv.ParseUint(userIDStr, 10, 64)
-			planID64, pErr := strconv.ParseUint(planIDStr, 10, 64)
-			if uErr != nil || pErr != nil {
-				log.Printf("[stripe] subscription.created: missing user_id/plan_id in metadata for %s\n", sub.ID)
-				break
-			}
-			localSub, err = s.subscriptionService.CreateFromStripeSub(&sub, uint(userID64), uint(planID64))
-			if err != nil {
-				return fmt.Errorf("create subscription from event: %w", err)
-			}
-		} else {
-			localSub = existing
-		}
-
-		if sub.LatestInvoice != nil && sub.LatestInvoice.ID != "" {
-			if err := s.invoiceService.CreateInitialInvoice(sub.LatestInvoice.ID, localSub.UserID, localSub.ID); err != nil {
-				log.Printf("[stripe] subscription.created: failed to create initial invoice for %s: %v\n", sub.ID, err)
-			}
-		}
-
-	case stripeGo.EventTypeCustomerSubscriptionUpdated,
-		stripeGo.EventTypeCustomerSubscriptionDeleted,
-		stripeGo.EventTypeCustomerSubscriptionPaused,
-		stripeGo.EventTypeCustomerSubscriptionResumed:
-		log.Printf("[stripe] %s: id=%s status=%s\n", event.Type, sub.ID, sub.Status)
-		if err := s.subscriptionService.UpdateSubscriptionFromEvent(&sub); err != nil {
-			return err
-		}
-
-	case stripeGo.EventTypeCustomerSubscriptionTrialWillEnd:
-		log.Printf("[stripe] subscription.trial_will_end: id=%s trial_end=%d\n", sub.ID, sub.TrialEnd)
-	}
-
-	return nil
+	return s.invoicePublisher.PublishDataRawToQueue(models.InvoiceEventType(event.Type), event.Data)
 }

@@ -9,7 +9,7 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 - **Subscription Billing**: Stripe integration — plans, payment methods, subscriptions, refunds
 - **Payment History**: Full audit trail of all payments per user
 - **Click Statistics**: Time-range and per-link analytics
-- **Event-Driven Architecture**: Asynchronous statistics via event bus
+- **Async Event Processing**: RabbitMQ consumers for payment intents, subscriptions, and invoices
 - **Redis Caching**: Stats cache for performance
 - **Internationalization**: EN / RU / DE (frontend)
 
@@ -19,6 +19,7 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 - **Go** (net/http ServeMux)
 - **PostgreSQL** with GORM
 - **Redis** (stats caching)
+- **RabbitMQ** (async event processing via `rabbitmq/amqp091-go`)
 - **Stripe Go SDK** (v84)
 - **golang-jwt/jwt**
 - **golang-migrate** (SQL migrations)
@@ -37,27 +38,37 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 ```
 .
 ├── cmd/
-│   └── main.go                    # App entry point, dependency wiring
+│   ├── server/                    # HTTP server entry point
+│   ├── consumers/
+│   │   ├── paymentIntent/         # PaymentIntent event consumer
+│   │   ├── subscription/          # Subscription event consumer
+│   │   └── invoice/               # Invoice event consumer
+│   └── shared/                    # Shared consumer loop & config loader
 ├── configs/                       # Configuration loading
 ├── internal/
 │   ├── account/                   # Stripe customer account management
 │   ├── auth/                      # Registration & login
+│   ├── consts/                    # RabbitMQ exchange/queue/routing constants
+│   ├── consumers/                 # Consumer handler logic (paymentIntent, subscription, invoice)
 │   ├── jwt/                       # JWT service
 │   ├── link/                      # Link CRUD + redirect
+│   ├── models/                    # Shared message/event models
+│   ├── publishers/                # RabbitMQ publishers (payment, subscription, invoice)
 │   ├── stats/                     # Click statistics
 │   ├── user/                      # User repository
 │   └── payments/
-│       ├── models/                # Payment DB model
+│       ├── invoice/               # Invoice repository & service
 │       ├── payment/               # Payment repository & handler (GET /payments)
 │       ├── plan/                  # Plans (GET /plans)
 │       ├── stripe/                # Stripe handlers & services
-│       │   └── services/          # PaymentIntent, Refund helpers
+│       │   └── services/          # PaymentIntent, CustomerAccount helpers
 │       ├── subscription/          # Subscription service, handlers
-│       └── webhook/               # Stripe webhook handler
+│       └── webhook/               # Stripe webhook handler & service
 ├── pkg/
 │   ├── db/                        # Database connection
-│   ├── event/                     # Event bus
+│   ├── event/                     # In-process event bus
 │   ├── middleware/                 # CORS, auth, subscription check
+│   ├── rabbitMq/                  # RabbitMQ client wrapper
 │   ├── request/                   # Body parsing helpers
 │   └── response/                  # JSON response helpers
 ├── migrations/sql/                # SQL migration files
@@ -72,6 +83,7 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 │   └── packages/
 │       ├── ui/                    # Shared component library + Storybook
 │       └── eslint-config/         # Shared ESLint config
+├── Makefile
 ├── docker-compose.yml
 └── .env.example
 ```
@@ -83,13 +95,14 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 - Go 1.21+
 - PostgreSQL
 - Redis
+- RabbitMQ
 - Node.js 20+ and pnpm
-- Docker & Docker Compose (optional)
+- Docker & Docker Compose
 - Stripe account (test keys)
 
 ### Environment Variables
 
-Copy `.env.example` to `.env` and fill in the values:
+Copy `.env.example` to `.env`:
 
 ```env
 DSN="host=localhost user=postgres password=pass dbname=linkshort port=5432 sslmode=disable"
@@ -97,36 +110,88 @@ TOKEN="your_jwt_secret"
 REDIS_URL="localhost:6379"
 STRIPE_KEY="sk_test_..."
 STRIPE_WEBHOOK_SECRET="whsec_..."
+RABBITMQ_URL="amqp://guest:guest@localhost:5672/"
+RABBITMQ_CONSUMERS=1
 ```
 
-### Running with Docker
+`RABBITMQ_CONSUMERS` controls how many worker instances start per consumer type in `make dev` / `make consumers`.
+
+### Running with Docker + Make
 
 ```bash
-docker-compose up -d
+# Start infrastructure (Postgres, Redis, RabbitMQ) + server + all consumers + frontend
+make dev
+
+# Or step by step:
+make docker-up       # start infrastructure
+make server          # HTTP server only (port 8081)
+make consumers       # all consumer workers
+make consumer-payment
+make consumer-subscription
+make consumer-invoice
+
+# Scale consumers (e.g. 3 workers each)
+make consumers WORKERS=3
 ```
 
-The API starts on `http://localhost:8081`.
+> In `make dev`, consumers wait for the HTTP server to be ready on port 8081 before starting.
 
-### Running Locally
+### Running Locally (without Make)
 
 ```bash
-# Backend
-go mod download
-go run cmd/main.go
+# Backend server
+go run ./cmd/server
 
-# Frontend (from project root)
-cd frontend
-pnpm install
-pnpm dev
+# Consumers (each in separate terminal)
+go run ./cmd/consumers/paymentIntent
+go run ./cmd/consumers/subscription
+go run ./cmd/consumers/invoice
+
+# Frontend
+cd frontend && pnpm install && pnpm dev
 ```
 
-Frontend runs on `http://localhost:3000`.
+### Build Binaries
+
+```bash
+make build
+# Produces: bin/server, bin/consumer-payment, bin/consumer-subscription, bin/consumer-invoice
+```
 
 ### Database Migrations
 
 ```bash
 migrate -path migrations/sql -database "$DSN" up
 ```
+
+## Async Event Architecture
+
+Stripe webhook events are handled asynchronously via RabbitMQ:
+
+```
+Stripe → POST /stripe/webhook
+           │
+           ├── PaymentIntent events → paymentIntent exchange → paymentIntentQueue
+           │                                                        │
+           │                                              PaymentIntent consumer
+           │                                              (sync payment record)
+           │
+           ├── Subscription events → Subscription exchange → subscriptionQueue
+           │                                                       │
+           │                                             Subscription consumer
+           │                                             (create/update/cancel sub,
+           │                                              create initial invoice)
+           │
+           └── invoice.payment_succeeded → Invoice exchange → invoiceQueue
+                                                                    │
+                                                          Invoice consumer
+                                                          (upsert invoice + payment record)
+```
+
+Each consumer binary:
+1. Creates its own exchange and queue on startup (idempotent)
+2. Processes messages with manual Ack/Nack
+3. Nacks on error (message re-queued for retry), except Stripe 400 errors (discarded)
 
 ## API Endpoints
 
@@ -159,7 +224,7 @@ migrate -path migrations/sql -database "$DSN" up
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/plans` | No | List available plans |
-| GET | `/subscriptions/me` | Yes | Current subscription (returns `isPaymentIntent` flag) |
+| GET | `/subscriptions/me` | Yes | Current subscription |
 | POST | `/subscriptions/method` | Yes | Create SetupIntent → `{clientSecret}` |
 | POST | `/subscriptions` | Yes | Create subscription `{planId}` |
 | PATCH | `/subscriptions/cancel` | Yes | Cancel subscription |
@@ -188,17 +253,19 @@ migrate -path migrations/sql -database "$DSN" up
 2. `POST /subscriptions/method` — create SetupIntent, get `clientSecret`
 3. `stripe.confirmCardSetup(clientSecret, {card})` — confirm card on frontend
 4. `POST /subscriptions {planId}` — create subscription
+5. Stripe fires `customer.subscription.created` → consumer creates local subscription + initial invoice
+6. Stripe fires `invoice.payment_succeeded` → consumer upserts invoice + payment record
 
 ### PaymentIntent flow (one-time)
 
 1. `POST /stripe/paymentIntent` — create PaymentIntent
 2. `stripe.confirmCardPayment(clientSecret, {card})` — confirm payment
-3. Webhook `payment_intent.succeeded` → subscription activated
+3. Stripe fires `payment_intent.succeeded` → consumer syncs payment record
 
 ### Cancellation
 
 - **Subscription** (`isPaymentIntent: false`): `PATCH /subscriptions/cancel`
-- **PaymentIntent payment** (`isPaymentIntent: true`): `POST /stripe/paymentIntent/cancel` (issues Stripe Refund, then marks subscription/payment canceled)
+- **PaymentIntent payment** (`isPaymentIntent: true`): `POST /stripe/paymentIntent/cancel` (issues Stripe Refund)
 
 > **Note**: A succeeded PaymentIntent cannot be canceled — the Refund API must be used instead.
 
@@ -215,97 +282,52 @@ migrate -path migrations/sql -database "$DSN" up
 ## Development Notes
 
 - **Auth middleware** (`middleware/auth.global.ts`) — redirects unauthenticated users
-- **Query cache** — cleared on login and logout to prevent stale data across user sessions
+- **Query cache** — cleared on login/logout to prevent stale data across sessions
 - **`GET /subscriptions/me`** — returns `204 No Content` when user has no subscription
 - **`isPaymentIntent`** field — `true` when `billing_id` starts with `pi_`, drives cancel button behavior
+- **Consumer startup** — each consumer creates its own RabbitMQ exchange/queue on init, safe to start independently
 
 ## Roadmap
 
-### 1. RabbitMQ — Email Invoice Delivery
+### 1. Invoice Email Delivery
 
-Send invoice emails asynchronously after successful payments.
+Send invoice PDFs by email after successful payment (RabbitMQ infrastructure is already in place).
 
-- Add RabbitMQ as a message broker (Docker service)
-- Publish `invoice.created` event from the Stripe webhook handler on `payment_intent.succeeded` / `invoice.paid`
-- Create a dedicated consumer service that reads the queue and sends emails via SMTP / SendGrid
-- Email template: payment amount, plan name, period, PDF invoice link from Stripe
-- Dead-letter queue for failed delivery retries
-
-**Key files to touch**: `internal/payments/webhook/service.go`, new `internal/mailer/`
+- Add SMTP / SendGrid mailer (`internal/mailer/`)
+- Subscribe to `invoiceQueue` or add a new email queue in the invoice consumer
+- Email template: amount, plan name, period, PDF link from Stripe
 
 ---
 
 ### 2. Extended Auth — User Agent, IP, Session Table
 
-Capture device and network context on every login and registration.
-
 - Create `auth_sessions` table: `id`, `user_id`, `ip`, `user_agent`, `created_at`
-- Parse `X-Forwarded-For` / `RemoteAddr` and `User-Agent` headers in login and register handlers
-- Save a session row on each successful auth event
-- Expose `GET /auth/sessions` — list of recent sessions for the current user (useful for security audit UI)
-- Consider adding `revoked_at` for active-session management / forced logout
-
-**Key files to touch**: `internal/auth/`, new `internal/auth/session/`, `migrations/sql/`
+- Parse headers in login/register handlers
+- Expose `GET /auth/sessions` for security audit UI
 
 ---
 
 ### 3. Columnar DB for Click Statistics
 
-Replace PostgreSQL click writes with a columnar store for analytical queries.
-
-- Introduce **ClickHouse** (or **TimescaleDB** as a lighter alternative) as a second data store
-- On every redirect (`GET /{hash}`), publish a click event: `link_id`, `timestamp`, `ip`, `user_agent`, `referrer`, `country` (via IP geolocation)
-- Write to ClickHouse via the existing event bus (new consumer alongside the current PostgreSQL consumer)
-- Rewrite `GET /stats` and `GET /stats/clicks` to query ClickHouse — aggregations become orders of magnitude faster at scale
-- Keep PostgreSQL only for relational data (users, links, subscriptions, payments)
-
-**Key files to touch**: `internal/stats/`, `pkg/event/`, new `pkg/clickhouse/`
+- Introduce **ClickHouse** or **TimescaleDB** for analytical queries
+- Publish click events with geo/device metadata
+- Rewrite `GET /stats` to query ClickHouse
 
 ---
 
 ### 4. Rate Limiting (RPS)
 
-Protect the API from abuse and enforce fair-use quotas.
-
-- Add a **token-bucket** rate limiter middleware using Redis (`go-redis` + Lua script or `golang.org/x/time/rate` for in-process)
-- Two tiers:
-  - **Global**: e.g. 1000 req/s per IP on public endpoints (`/{hash}`, `/auth/*`)
-  - **Per-user**: e.g. 60 req/min on authenticated endpoints, configurable per plan
-- Return `429 Too Many Requests` with `Retry-After` header
-- Store counters in Redis with TTL — stateless across instances
-
-**Key files to touch**: `pkg/middleware/`, `cmd/main.go`
+- Token-bucket limiter via Redis
+- Global IP-based + per-user quotas configurable per plan
+- `429 Too Many Requests` with `Retry-After`
 
 ---
 
-### 5. Scaling Strategy, Deployment & Monitoring
+### 5. Scaling & Monitoring
 
-Make the service production-ready and observable.
-
-#### Scaling Strategy
-
-- **Horizontal scaling**: stateless Go instances behind a load balancer (HAProxy / Nginx / AWS ALB)
-- **Database**: PostgreSQL read replicas for analytics queries; connection pooling via PgBouncer
-- **Redis**: Redis Cluster or Sentinel for HA; separate Redis instance per environment
-- **ClickHouse**: single-node for MVP, ClickHouse Keeper + sharding for high load
-- **RabbitMQ**: mirrored queues or RabbitMQ Cluster for durability
-- **CDN**: static frontend assets via CDN (Cloudflare / AWS CloudFront); redirect endpoint behind CDN with short cache TTL
-
-#### Deployment
-
-- **Containerization**: multi-stage Dockerfile for the Go binary (scratch base image, ~10 MB)
-- **Orchestration**: Docker Compose for local dev; Kubernetes manifests (Deployment, Service, HPA) for production
-- **CI/CD**: GitHub Actions pipeline — lint → test → build image → push to registry → rolling deploy
-- **Migrations**: run as a Kubernetes Job / init container before app pods start
-- **Secrets**: environment variables injected via Kubernetes Secrets or HashiCorp Vault
-
-#### Monitoring & Observability
-
-- **Metrics**: expose `GET /metrics` (Prometheus format) — request count, latency histograms, error rates, active subscriptions
-- **Tracing**: OpenTelemetry SDK → Jaeger / Tempo for distributed traces across Go + RabbitMQ consumers
-- **Logging**: structured JSON logs (`log/slog`) with `request_id`, `user_id`, `duration` fields → aggregated in Loki / CloudWatch
-- **Dashboards**: Grafana — API latency P99, click throughput, payment success rate, queue depth
-- **Alerting**: Alertmanager rules — error rate > 1%, P99 > 500ms, queue depth > 10k, failed payments spike
+- Horizontal scaling with stateless Go instances
+- Prometheus metrics endpoint, OpenTelemetry tracing
+- Grafana dashboards — latency, queue depth, payment success rate
 
 ---
 

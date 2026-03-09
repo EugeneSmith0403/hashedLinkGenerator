@@ -81,6 +81,12 @@ func (r *PaymentRepository) GetByPaymentIntentID(piID string) (*paymentmodels.Pa
 	return &p, nil
 }
 
+func (r *PaymentRepository) CancelBySubscriptionID(subscriptionID uint) error {
+	return r.db.DB.Model(&paymentmodels.Payment{}).
+		Where("subscription_id = ?", subscriptionID).
+		Update("status", "canceled").Error
+}
+
 func (r *PaymentRepository) GetByAccountID(accountID uint) ([]paymentmodels.Payment, error) {
 	var payments []paymentmodels.Payment
 	result := r.db.DB.Where("account_id = ?", accountID).Order("created_at DESC").Find(&payments)

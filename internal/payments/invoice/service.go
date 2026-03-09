@@ -5,30 +5,34 @@ import (
 	"fmt"
 
 	paymentrepo "adv/go-http/internal/payments/payment"
+	subscriptionrepo "adv/go-http/internal/payments/subscription"
 
 	"github.com/google/uuid"
 	stripeGo "github.com/stripe/stripe-go/v84"
 )
 
 type InvoiceServiceDeps struct {
-	StripeClient      *stripeGo.Client
-	InvoiceRepository *InvoiceRepository
-	PaymentRepository *paymentrepo.PaymentRepository
+	StripeClient           *stripeGo.Client
+	InvoiceRepository      *InvoiceRepository
+	PaymentRepository      *paymentrepo.PaymentRepository
+	SubscriptionRepository *subscriptionrepo.SubscriptionRepository
 }
 
 type InvoiceService struct {
-	stripeProvider    *stripeGo.Client
-	invoiceRepository *InvoiceRepository
-	paymentRepository *paymentrepo.PaymentRepository
-	ctx               context.Context
+	stripeProvider         *stripeGo.Client
+	invoiceRepository      *InvoiceRepository
+	paymentRepository      *paymentrepo.PaymentRepository
+	subscriptionRepository *subscriptionrepo.SubscriptionRepository
+	ctx                    context.Context
 }
 
 func NewInvoiceService(deps InvoiceServiceDeps) *InvoiceService {
 	return &InvoiceService{
-		stripeProvider:    deps.StripeClient,
-		invoiceRepository: deps.InvoiceRepository,
-		paymentRepository: deps.PaymentRepository,
-		ctx:               context.Background(),
+		stripeProvider:         deps.StripeClient,
+		invoiceRepository:      deps.InvoiceRepository,
+		paymentRepository:      deps.PaymentRepository,
+		subscriptionRepository: deps.SubscriptionRepository,
+		ctx:                    context.Background(),
 	}
 }
 
@@ -48,6 +52,18 @@ func (s *InvoiceService) CreatePaymentAndInvoiceFromStripeInvoice(inv *stripeGo.
 	piID := piIDFromInvoice(fullInv)
 	if piID == "" {
 		return nil
+	}
+
+	if accountID == 0 {
+		if p, lookupErr := s.paymentRepository.GetByPaymentIntentID(piID); lookupErr == nil && p != nil {
+			accountID = p.AccountID
+			if saved.AccountID == 0 && accountID != 0 {
+				saved.AccountID = accountID
+				if saved, err = s.invoiceRepository.Update(saved); err != nil {
+					return fmt.Errorf("update invoice accountID: %w", err)
+				}
+			}
+		}
 	}
 
 	return s.syncPaymentForInvoice(piID, accountID, saved, inv)
@@ -87,6 +103,9 @@ func (s *InvoiceService) CreateInvoiceForPayment(pi *stripeGo.PaymentIntent) err
 	}
 	if payment == nil {
 		return fmt.Errorf("payment not found for intent: %s", pi.ID)
+	}
+	if payment.InvoiceID != nil {
+		return nil
 	}
 
 	paid, err := s.createStripeInvoice(pi.Customer.ID, pi.Amount, string(pi.Currency))

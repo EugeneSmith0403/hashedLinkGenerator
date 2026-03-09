@@ -84,10 +84,11 @@ func NewSubscriptionHandlers(router *http.ServeMux, deps SubscriptionHandlerDeps
 }
 
 const (
-	errUnauthorized            = "unauthorized"
-	errPlanNotFound            = "plan not found"
-	errPlanNoStripePrice       = "plan has no stripe price configured"
-	errActiveSubNotFound       = "active subscription not found"
+	errUnauthorized      = "unauthorized"
+	errPlanNotFound      = "plan not found"
+	errPlanNoStripePrice = "plan has no stripe price configured"
+	errActiveSubNotFound = "active subscription not found"
+	errNoPaymentMethod   = "try again"
 )
 
 func stripeSubErrMsg(err error) string {
@@ -274,11 +275,18 @@ func (h *SubscriptionHandler) handleCreateSubscription() http.HandlerFunc {
 			curPlan.StripePriceID,
 		)
 		if subErr != nil {
+			code := http.StatusInternalServerError
+			msg := stripeSubErrMsg(subErr)
+			var stripeErr *stripeGo.Error
+			if errors.As(subErr, &stripeErr) && stripeErr.Code == stripeGo.ErrorCodeResourceMissing {
+				code = http.StatusUnprocessableEntity
+				msg = errNoPaymentMethod
+			}
 			h.responsePkg.Json(&response.JsonOptions{
-				Data:   errorType.ErrorType{Error: stripeSubErrMsg(subErr)},
+				Data:   errorType.ErrorType{Error: msg},
 				Writer: w,
 				Reader: r,
-				Code:   http.StatusInternalServerError,
+				Code:   code,
 			})
 			return
 		}

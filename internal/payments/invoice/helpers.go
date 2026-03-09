@@ -2,6 +2,7 @@ package invoice
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -71,17 +72,41 @@ func (s *InvoiceService) syncPaymentForInvoice(piID string, accountID uint, save
 		return nil
 	}
 
+	// Fetch PaymentIntent with latest_charge to get chargeID and payment method type
+	var chargeID *string
+	var paymentMethodType string
+	piParams := &stripeGo.PaymentIntentRetrieveParams{}
+	piParams.AddExpand("latest_charge")
+	if pi, piErr := s.stripeProvider.V1PaymentIntents.Retrieve(s.ctx, piID, piParams); piErr == nil && pi.LatestCharge != nil {
+		chargeID = &pi.LatestCharge.ID
+		if pi.LatestCharge.PaymentMethodDetails != nil {
+			paymentMethodType = string(pi.LatestCharge.PaymentMethodDetails.Type)
+		}
+	}
+
+	// Get PlanID from local subscription
+	var planID *uint
+	if savedInv.SubscriptionID != nil && s.subscriptionRepository != nil {
+		if sub, subErr := s.subscriptionRepository.GetByID(*savedInv.SubscriptionID); subErr == nil && sub != nil {
+			planID = &sub.PlanID
+		}
+	}
+
 	metaPayJSON, _ := json.Marshal(inv.Metadata)
 	payment := &paymentmodels.Payment{
-		ID:               uuid.New(),
-		AccountID:        accountID,
-		InvoiceID:        &savedInv.ID,
-		PaymentIntentID:  piID,
-		Amount:           inv.AmountPaid,
-		NetAmount:        inv.AmountPaid,
-		Currency:         string(inv.Currency),
-		Status:           stripe.PaymentIntentStatusSucceeded,
-		ProviderMetadata: datatypes.JSON(metaPayJSON),
+		ID:                uuid.New(),
+		AccountID:         accountID,
+		InvoiceID:         &savedInv.ID,
+		SubscriptionID:    savedInv.SubscriptionID,
+		PlanID:            planID,
+		PaymentIntentID:   piID,
+		ChargeID:          chargeID,
+		Amount:            inv.AmountPaid,
+		NetAmount:         inv.AmountPaid,
+		Currency:          string(inv.Currency),
+		Status:            stripe.PaymentIntentStatusSucceeded,
+		PaymentMethodType: paymentMethodType,
+		ProviderMetadata:  datatypes.JSON(metaPayJSON),
 	}
 	_, err = s.paymentRepository.Create(payment)
 	return err
@@ -112,10 +137,22 @@ func (s *InvoiceService) createStripeInvoice(customerID string, amount int64, cu
 		return nil, fmt.Errorf("finalize invoice: %w", err)
 	}
 
+	// Stripe may auto-charge on finalization if customer has a default payment method
+	if finalized.Status == stripeGo.InvoiceStatusPaid {
+		return finalized, nil
+	}
+
 	paid, err := s.stripeProvider.V1Invoices.Pay(s.ctx, finalized.ID, &stripeGo.InvoicePayParams{
 		PaidOutOfBand: stripe.Bool(true),
 	})
 	if err != nil {
+		var stripeErr *stripeGo.Error
+		if errors.As(err, &stripeErr) && stripeErr.HTTPStatusCode == 400 {
+			current, getErr := s.stripeProvider.V1Invoices.Retrieve(s.ctx, finalized.ID, nil)
+			if getErr == nil && current.Status == stripeGo.InvoiceStatusPaid {
+				return current, nil
+			}
+		}
 		return nil, fmt.Errorf("mark invoice paid: %w", err)
 	}
 
@@ -123,6 +160,18 @@ func (s *InvoiceService) createStripeInvoice(customerID string, amount int64, cu
 }
 
 func (s *InvoiceService) saveLocalInvoice(paid *stripeGo.Invoice, accountID uint) (*Invoice, error) {
+	existing, err := s.invoiceRepository.GetByBillingID(paid.ID)
+	if err != nil {
+		return nil, fmt.Errorf("check existing invoice: %w", err)
+	}
+	if existing != nil {
+		if existing.AccountID == 0 && accountID != 0 {
+			existing.AccountID = accountID
+			return s.invoiceRepository.Update(existing)
+		}
+		return existing, nil
+	}
+
 	metaJSON, _ := json.Marshal(paid)
 	localInv := &Invoice{
 		AccountID:        accountID,

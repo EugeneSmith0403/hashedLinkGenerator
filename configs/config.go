@@ -8,11 +8,12 @@ import (
 )
 
 type Config struct {
-	Mode   string
-	Db     DbConfig
-	Auth   AuthConfig
-	Stripe StripeConfig
-	Redis  Redis
+	Mode     string
+	Db       DbConfig
+	Auth     AuthConfig
+	Stripe   StripeConfig
+	Redis    Redis
+	RabbitMq RabbitMq
 }
 
 type Redis struct {
@@ -20,6 +21,12 @@ type Redis struct {
 	Username string
 	Password string
 	Cache    string
+}
+type RabbitMq struct {
+	Amqp      string
+	User      string
+	Password  string
+	Consumers string
 }
 
 type StripeConfig struct {
@@ -39,7 +46,6 @@ type AuthConfig struct {
 }
 
 func LoadConfig(envFiles ...string) *Config {
-	// If no env files specified, try to load default .env
 	if len(envFiles) == 0 {
 		envFiles = []string{".env"}
 	}
@@ -69,6 +75,12 @@ func LoadConfig(envFiles ...string) *Config {
 			Username: os.Getenv("REDIS_USER"),
 			Password: os.Getenv("REDIS_USER_PASSWORD"),
 			Cache:    os.Getenv("REDIS_CACHE"),
+		},
+		RabbitMq: RabbitMq{
+			User:      os.Getenv("RABBITMQ_USER"),
+			Password:  os.Getenv("RABBITMQ_PASSWORD"),
+			Consumers: os.Getenv("RABBITMQ_CONSUMERS"),
+			Amqp:      os.Getenv("RABBITNQ_AMQP"),
 		},
 	}
 }
