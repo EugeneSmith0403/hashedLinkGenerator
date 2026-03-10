@@ -1,9 +1,9 @@
-.PHONY: dev server consumers consumer-payment consumer-subscription consumer-invoice frontend build docker-up docker-down
+.PHONY: dev server consumers consumer-payment consumer-subscription consumer-invoice frontend build docker-up docker-down migrate
 
 # Read from .env; override via CLI: make consumers WORKERS=3
 WORKERS ?= $(shell grep -E '^RABBITMQ_CONSUMERS' .env | cut -d'=' -f2 | tr -d '"' 2>/dev/null || echo 1)
 
-dev: docker-up
+dev: docker-up migrate
 	@trap 'kill 0' INT TERM; \
 	go run ./cmd/server & \
 	until nc -z localhost 8081 2>/dev/null; do sleep 0.2; done; \
@@ -12,7 +12,7 @@ dev: docker-up
 		go run ./cmd/consumers/subscription & \
 		go run ./cmd/consumers/invoice & \
 	done; \
-	cd frontend && pnpm dev & \
+	cd frontend && pnpm install && pnpm dev & \
 	wait
 
 server:
@@ -45,13 +45,16 @@ consumer-invoice:
 	wait
 
 frontend:
-	cd frontend && pnpm dev
+	cd frontend && pnpm install && pnpm dev
 
 docker-up:
 	docker compose up -d --wait
 
 docker-down:
 	docker compose down
+
+migrate:
+	go run ./migrations
 
 build:
 	@mkdir -p bin

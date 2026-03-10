@@ -1,9 +1,9 @@
 package publishers
 
 import (
-	"adv/go-http/internal/consts"
-	"adv/go-http/internal/models"
-	rabbitmq "adv/go-http/pkg/rabbitMq"
+	"link-generator/internal/consts"
+	"link-generator/internal/models"
+	rabbitmq "link-generator/pkg/rabbitMq"
 	"encoding/json"
 	"fmt"
 	"log"

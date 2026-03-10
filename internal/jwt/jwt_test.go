@@ -1,7 +1,7 @@
 package jwt_test
 
 import (
-	internalJwt "adv/go-http/internal/jwt"
+	internalJwt "link-generator/internal/jwt"
 	"testing"
 
 	"github.com/golang-jwt/jwt/v5"

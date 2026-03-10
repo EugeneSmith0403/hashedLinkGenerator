@@ -1,11 +1,11 @@
 package auth_test
 
 import (
-	"adv/go-http/configs"
-	"adv/go-http/internal/auth"
-	internalJWT "adv/go-http/internal/jwt"
-	"adv/go-http/internal/user"
-	"adv/go-http/pkg/db"
+	"link-generator/configs"
+	"link-generator/internal/auth"
+	internalJWT "link-generator/internal/jwt"
+	"link-generator/internal/user"
+	"link-generator/pkg/db"
 	"bytes"
 	"encoding/json"
 	"net/http"

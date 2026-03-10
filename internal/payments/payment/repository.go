@@ -3,8 +3,8 @@ package payment
 import (
 	"errors"
 
-	paymentmodels "adv/go-http/internal/payments/models"
-	"adv/go-http/pkg/db"
+	paymentmodels "link-generator/internal/payments/models"
+	"link-generator/pkg/db"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"

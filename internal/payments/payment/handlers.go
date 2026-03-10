@@ -4,11 +4,11 @@ import (
 	"errors"
 	"net/http"
 
-	"adv/go-http/internal/account"
-	internalJWT "adv/go-http/internal/jwt"
-	errorType "adv/go-http/pkg/errorType"
-	"adv/go-http/pkg/middleware"
-	"adv/go-http/pkg/response"
+	"link-generator/internal/account"
+	internalJWT "link-generator/internal/jwt"
+	errorType "link-generator/pkg/errorType"
+	"link-generator/pkg/middleware"
+	"link-generator/pkg/response"
 )
 
 type PaymentHandlerDeps struct {

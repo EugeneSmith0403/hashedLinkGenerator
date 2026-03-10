@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	"adv/go-http/internal/jwt"
-	"adv/go-http/pkg/middleware"
-	"adv/go-http/pkg/redis"
-	"adv/go-http/pkg/response"
+	"link-generator/internal/jwt"
+	"link-generator/pkg/middleware"
+	"link-generator/pkg/redis"
+	"link-generator/pkg/response"
 )
 
 const plansCacheKey = "plans:active"

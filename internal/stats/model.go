@@ -3,7 +3,7 @@ package stats
 import (
 	"time"
 
-	"adv/go-http/internal/models"
+	"link-generator/internal/models"
 
 	"gorm.io/gorm"
 )

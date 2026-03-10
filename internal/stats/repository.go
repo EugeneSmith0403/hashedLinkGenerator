@@ -1,7 +1,7 @@
 package stats
 
 import (
-	"adv/go-http/pkg/db"
+	"link-generator/pkg/db"
 	"time"
 
 	"gorm.io/gorm"

@@ -1,9 +1,9 @@
 package main
 
 import (
-	"adv/go-http/configs"
-	"adv/go-http/internal/auth"
-	"adv/go-http/internal/user"
+	"link-generator/configs"
+	"link-generator/internal/auth"
+	"link-generator/internal/user"
 	"bytes"
 	"encoding/json"
 	"net/http"

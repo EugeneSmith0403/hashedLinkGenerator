@@ -1,7 +1,7 @@
 package request
 
 import (
-	"adv/go-http/pkg/response"
+	"link-generator/pkg/response"
 	"net/http"
 )
 

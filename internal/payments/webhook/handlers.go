@@ -4,11 +4,11 @@ import (
 	"io"
 	"net/http"
 
-	"adv/go-http/internal/account"
-	invoiceService "adv/go-http/internal/payments/invoice"
-	stripeServices "adv/go-http/internal/payments/stripe/services"
-	"adv/go-http/internal/payments/subscription"
-	rabbitmq "adv/go-http/pkg/rabbitMq"
+	"link-generator/internal/account"
+	invoiceService "link-generator/internal/payments/invoice"
+	stripeServices "link-generator/internal/payments/stripe/services"
+	"link-generator/internal/payments/subscription"
+	rabbitmq "link-generator/pkg/rabbitMq"
 )
 
 type WebhookHandlerDeps struct {

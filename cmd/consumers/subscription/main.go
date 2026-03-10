@@ -6,16 +6,16 @@ import (
 
 	stripeGo "github.com/stripe/stripe-go/v84"
 
-	"adv/go-http/cmd/shared"
-	"adv/go-http/internal/account"
-	"adv/go-http/internal/consts"
-	subConsumer "adv/go-http/internal/consumers"
-	"adv/go-http/internal/payments/invoice"
-	"adv/go-http/internal/payments/payment"
-	"adv/go-http/internal/payments/plan"
-	"adv/go-http/internal/payments/subscription"
-	"adv/go-http/pkg/db"
-	rabbitmq "adv/go-http/pkg/rabbitMq"
+	"link-generator/cmd/shared"
+	"link-generator/internal/account"
+	"link-generator/internal/consts"
+	subConsumer "link-generator/internal/consumers"
+	"link-generator/internal/payments/invoice"
+	"link-generator/internal/payments/payment"
+	"link-generator/internal/payments/plan"
+	"link-generator/internal/payments/subscription"
+	"link-generator/pkg/db"
+	rabbitmq "link-generator/pkg/rabbitMq"
 )
 
 func main() {

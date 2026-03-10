@@ -1,7 +1,7 @@
 package invoice
 
 import (
-	"adv/go-http/pkg/db"
+	"link-generator/pkg/db"
 	"errors"
 
 	"gorm.io/gorm"

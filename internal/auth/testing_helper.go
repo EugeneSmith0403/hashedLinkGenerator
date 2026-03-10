@@ -1,9 +1,9 @@
 package auth
 
 import (
-	"adv/go-http/configs"
-	internalJWT "adv/go-http/internal/jwt"
-	"adv/go-http/pkg/response"
+	"link-generator/configs"
+	internalJWT "link-generator/internal/jwt"
+	"link-generator/pkg/response"
 )
 
 // NewAuthHandlerForTest создает AuthHandler для тестов

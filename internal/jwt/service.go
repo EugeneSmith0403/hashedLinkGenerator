@@ -1,7 +1,7 @@
 package jwt
 
 import (
-	"adv/go-http/pkg/redis"
+	"link-generator/pkg/redis"
 	"fmt"
 
 	"github.com/golang-jwt/jwt/v5"

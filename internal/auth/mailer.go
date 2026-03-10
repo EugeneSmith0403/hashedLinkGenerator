@@ -1,7 +1,7 @@
 package auth
 
 import (
-	"adv/go-http/internal/mailer"
+	"link-generator/internal/mailer"
 	"fmt"
 	"log"
 	"time"

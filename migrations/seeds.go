@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"adv/go-http/internal/payments/plan"
+	"link-generator/internal/payments/plan"
 
 	stripe "github.com/stripe/stripe-go/v84"
 	stripeGo "github.com/stripe/stripe-go/v84"

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	paymentrepo "adv/go-http/internal/payments/payment"
-	subscriptionrepo "adv/go-http/internal/payments/subscription"
+	paymentrepo "link-generator/internal/payments/payment"
+	subscriptionrepo "link-generator/internal/payments/subscription"
 
 	"github.com/google/uuid"
 	stripeGo "github.com/stripe/stripe-go/v84"
