@@ -1,0 +1,13 @@
+[welcome]
+subject        = "Welcome to {{.AppName}}!"
+title          = "Welcome aboard!"
+subtitle       = "Your account has been successfully created"
+greeting       = "Hello, %s!"
+intro          = "We're thrilled to have you with us. Your account is ready and you can start using the service right away."
+section_title  = "Account Details"
+label_name     = "Name"
+label_email    = "Email"
+btn_start      = "Get Started"
+outro          = "If you have any questions, feel free to reply to this email or contact our support team. We're always happy to help."
+footer_sent_to = "This email was sent to"
+footer_rights  = "All rights reserved."

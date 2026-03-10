@@ -18,9 +18,10 @@ import (
 
 type AuthHandlerDeps struct {
 	*configs.Config
-	AuthService *AuthService
-	JWTService  *internalJWT.JWTService
-	RedisSrvice *redis.Redis
+	AuthService    *AuthService
+	JWTService     *internalJWT.JWTService
+	RedisSrvice    *redis.Redis
+	AuthMailerDeps AuthMailerDeps
 }
 
 type AuthHandler struct {
@@ -29,6 +30,7 @@ type AuthHandler struct {
 	AuthService *AuthService
 	JWTService  *internalJWT.JWTService
 	RedisSrvice *redis.Redis
+	authMailer  *AuthMailer
 }
 
 func NewAuthHandlers(router *http.ServeMux, deps AuthHandlerDeps) {
@@ -46,6 +48,7 @@ func NewAuthHandlers(router *http.ServeMux, deps AuthHandlerDeps) {
 		AuthService: deps.AuthService,
 		JWTService:  deps.JWTService,
 		RedisSrvice: deps.RedisSrvice,
+		authMailer:  NewAuthMailer(deps.AuthMailerDeps),
 	}
 	router.HandleFunc("POST /auth/login", handler.Login())
 	router.HandleFunc("POST /auth/register", handler.Register())
@@ -197,6 +200,8 @@ func (auth *AuthHandler) Register() http.HandlerFunc {
 		userKey := fmt.Sprintf("token:%s", body.Email)
 
 		auth.RedisSrvice.Set(userKey, true, time.Duration(expirationTime))
+
+		go auth.authMailer.SendWelcomeEmail(body.Name, email, "en")
 
 		auth.responsePkg.Json(&response.JsonOptions{
 			Data:   res,

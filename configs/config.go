@@ -3,6 +3,7 @@ package configs
 import (
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 )
@@ -14,6 +15,15 @@ type Config struct {
 	Stripe   StripeConfig
 	Redis    Redis
 	RabbitMq RabbitMq
+	Mailer   MailerConfig
+}
+
+type MailerConfig struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+	From     string
 }
 
 type Redis struct {
@@ -43,6 +53,14 @@ type DbConfig struct {
 type AuthConfig struct {
 	Secret    string
 	ExpiredAt string
+}
+
+func smtpPort(s string) int {
+	port, err := strconv.Atoi(s)
+	if err != nil {
+		return 587
+	}
+	return port
 }
 
 func LoadConfig(envFiles ...string) *Config {
@@ -81,6 +99,13 @@ func LoadConfig(envFiles ...string) *Config {
 			Password:  os.Getenv("RABBITMQ_PASSWORD"),
 			Consumers: os.Getenv("RABBITMQ_CONSUMERS"),
 			Amqp:      os.Getenv("RABBITNQ_AMQP"),
+		},
+		Mailer: MailerConfig{
+			Host:     os.Getenv("SMTP_HOST"),
+			Port:     smtpPort(os.Getenv("SMTP_PORT")),
+			User:     os.Getenv("SMTP_USER"),
+			Password: os.Getenv("SMTP_PASSWORD"),
+			From:     os.Getenv("SMTP_FROM"),
 		},
 	}
 }

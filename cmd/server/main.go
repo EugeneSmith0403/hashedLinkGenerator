@@ -16,6 +16,8 @@ import (
 	"adv/go-http/internal/auth"
 	"adv/go-http/internal/jwt"
 	"adv/go-http/internal/link"
+	"adv/go-http/internal/locales"
+	"adv/go-http/internal/mailer"
 	"adv/go-http/internal/payments/invoice"
 	"adv/go-http/internal/payments/payment"
 	"adv/go-http/internal/payments/plan"
@@ -143,6 +145,19 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 		AuthService: a.svc.auth,
 		JWTService:  a.svc.jwt,
 		RedisSrvice: a.redis,
+		AuthMailerDeps: auth.AuthMailerDeps{
+			Mailer: mailer.NewMailer(mailer.MailerDeps{
+				LocalesFS:  locales.FS,
+				LocalesDir: "auth/register",
+				Host:       a.cfg.Mailer.Host,
+				Port:       a.cfg.Mailer.Port,
+				User:       a.cfg.Mailer.User,
+				Password:   a.cfg.Mailer.Password,
+			}),
+			MailerFrom: a.cfg.Mailer.From,
+			AppName:    "Go Adv",
+			AppURL:     a.cfg.Stripe.ReturnURL,
+		},
 	})
 	link.NewLinkHandler(router, link.LinkHandlerDeps{
 		Config:              a.cfg,
