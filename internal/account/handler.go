@@ -4,12 +4,12 @@ import (
 	"errors"
 	"net/http"
 
-	internalJWT "adv/go-http/internal/jwt"
-	"adv/go-http/internal/user"
-	errorType "adv/go-http/pkg/errorType"
-	"adv/go-http/pkg/middleware"
-	"adv/go-http/pkg/request"
-	"adv/go-http/pkg/response"
+	internalJWT "link-generator/internal/jwt"
+	"link-generator/internal/user"
+	errorType "link-generator/pkg/errorType"
+	"link-generator/pkg/middleware"
+	"link-generator/pkg/request"
+	"link-generator/pkg/response"
 )
 
 type AccountHandlerDeps struct {

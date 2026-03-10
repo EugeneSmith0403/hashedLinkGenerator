@@ -1,14 +1,14 @@
 package link
 
 import (
-	"adv/go-http/configs"
-	"adv/go-http/internal/jwt"
-	"adv/go-http/internal/models"
-	"adv/go-http/internal/user"
-	"adv/go-http/pkg/event"
-	"adv/go-http/pkg/middleware"
-	"adv/go-http/pkg/request"
-	"adv/go-http/pkg/response"
+	"link-generator/configs"
+	"link-generator/internal/jwt"
+	"link-generator/internal/models"
+	"link-generator/internal/user"
+	"link-generator/pkg/event"
+	"link-generator/pkg/middleware"
+	"link-generator/pkg/request"
+	"link-generator/pkg/response"
 	"fmt"
 	"net/http"
 	"strconv"

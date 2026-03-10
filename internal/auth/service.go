@@ -1,8 +1,8 @@
 package auth
 
 import (
-	"adv/go-http/internal/user"
-	"adv/go-http/pkg/di"
+	"link-generator/internal/user"
+	"link-generator/pkg/di"
 	"errors"
 
 	"golang.org/x/crypto/bcrypt"

@@ -1,13 +1,13 @@
 package auth
 
 import (
-	"adv/go-http/configs"
-	internalJWT "adv/go-http/internal/jwt"
-	errorType "adv/go-http/pkg/errorType"
-	"adv/go-http/pkg/helpers"
-	"adv/go-http/pkg/redis"
-	"adv/go-http/pkg/request"
-	"adv/go-http/pkg/response"
+	"link-generator/configs"
+	internalJWT "link-generator/internal/jwt"
+	errorType "link-generator/pkg/errorType"
+	"link-generator/pkg/helpers"
+	"link-generator/pkg/redis"
+	"link-generator/pkg/request"
+	"link-generator/pkg/response"
 	"fmt"
 	"net/http"
 	"strconv"

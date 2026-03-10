@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strconv"
 
-	paymentrepo "adv/go-http/internal/payments/payment"
+	paymentrepo "link-generator/internal/payments/payment"
 
 	"github.com/google/uuid"
 	"github.com/stripe/stripe-go/v84"

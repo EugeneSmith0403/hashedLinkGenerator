@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	payments "adv/go-http/internal/payments/models"
-	"adv/go-http/internal/user"
-	pkgRedis "adv/go-http/pkg/redis"
+	payments "link-generator/internal/payments/models"
+	"link-generator/internal/user"
+	pkgRedis "link-generator/pkg/redis"
 )
 
 var (

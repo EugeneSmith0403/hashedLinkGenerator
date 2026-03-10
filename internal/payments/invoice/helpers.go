@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	paymentmodels "adv/go-http/internal/payments/models"
+	paymentmodels "link-generator/internal/payments/models"
 
 	"github.com/google/uuid"
 	"github.com/stripe/stripe-go/v84"

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strconv"
 
-	paymentmodels "adv/go-http/internal/payments/models"
+	paymentmodels "link-generator/internal/payments/models"
 
 	"github.com/google/uuid"
 	stripeGo "github.com/stripe/stripe-go/v84"

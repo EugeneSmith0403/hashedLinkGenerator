@@ -1,6 +1,6 @@
 package di
 
-import "adv/go-http/internal/user"
+import "link-generator/internal/user"
 
 type IUserRepository interface {
 	Create(u *user.User) (*user.User, error)

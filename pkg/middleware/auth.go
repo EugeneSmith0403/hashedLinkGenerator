@@ -1,8 +1,8 @@
 package middleware
 
 import (
-	"adv/go-http/internal/auth"
-	internalJWT "adv/go-http/internal/jwt"
+	"link-generator/internal/auth"
+	internalJWT "link-generator/internal/jwt"
 	"context"
 	"net/http"
 	"strings"

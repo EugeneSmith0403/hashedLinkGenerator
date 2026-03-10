@@ -8,10 +8,10 @@ import (
 
 	stripeGo "github.com/stripe/stripe-go/v84"
 
-	"adv/go-http/internal/account"
-	"adv/go-http/internal/models"
-	"adv/go-http/internal/payments/invoice"
-	"adv/go-http/internal/payments/subscription"
+	"link-generator/internal/account"
+	"link-generator/internal/models"
+	"link-generator/internal/payments/invoice"
+	"link-generator/internal/payments/subscription"
 )
 
 type SubscriptionConsumerDeps struct {

@@ -1,12 +1,12 @@
 package stats
 
 import (
-	"adv/go-http/configs"
-	"adv/go-http/internal/jwt"
-	"adv/go-http/pkg/errorType"
-	"adv/go-http/pkg/middleware"
-	"adv/go-http/pkg/redis"
-	"adv/go-http/pkg/response"
+	"link-generator/configs"
+	"link-generator/internal/jwt"
+	"link-generator/pkg/errorType"
+	"link-generator/pkg/middleware"
+	"link-generator/pkg/redis"
+	"link-generator/pkg/response"
 	"net/http"
 	"strconv"
 	"time"

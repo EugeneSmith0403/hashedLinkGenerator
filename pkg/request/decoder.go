@@ -1,8 +1,8 @@
 package request
 
 import (
-	errorType "adv/go-http/pkg/errorType"
-	"adv/go-http/pkg/response"
+	errorType "link-generator/pkg/errorType"
+	"link-generator/pkg/response"
 	"encoding/json"
 	"io"
 )

@@ -1,7 +1,7 @@
 package rabbitmq
 
 import (
-	"adv/go-http/configs"
+	"link-generator/configs"
 	"context"
 	"fmt"
 	"strconv"

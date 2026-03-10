@@ -1,7 +1,7 @@
 package stats
 
 import (
-	"adv/go-http/pkg/redis"
+	"link-generator/pkg/redis"
 	"encoding/json"
 	"fmt"
 	"log"

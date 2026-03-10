@@ -7,9 +7,9 @@ import (
 
 	stripeGo "github.com/stripe/stripe-go/v84"
 
-	"adv/go-http/internal/consts"
-	"adv/go-http/internal/models"
-	rabbitmq "adv/go-http/pkg/rabbitMq"
+	"link-generator/internal/consts"
+	"link-generator/internal/models"
+	rabbitmq "link-generator/pkg/rabbitMq"
 )
 
 type InvoicePublisher struct {

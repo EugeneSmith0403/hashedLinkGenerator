@@ -1,8 +1,8 @@
 package link
 
 import (
-	"adv/go-http/internal/models"
-	"adv/go-http/pkg/db"
+	"link-generator/internal/models"
+	"link-generator/pkg/db"
 )
 
 type LinkRepository struct {

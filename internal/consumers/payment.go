@@ -7,10 +7,10 @@ import (
 
 	stripeGo "github.com/stripe/stripe-go/v84"
 
-	"adv/go-http/internal/models"
-	"adv/go-http/internal/payments/invoice"
-	stripeServices "adv/go-http/internal/payments/stripe/services"
-	"adv/go-http/internal/payments/subscription"
+	"link-generator/internal/models"
+	"link-generator/internal/payments/invoice"
+	stripeServices "link-generator/internal/payments/stripe/services"
+	"link-generator/internal/payments/subscription"
 )
 
 type PaymentIntentConsumerDeps struct {

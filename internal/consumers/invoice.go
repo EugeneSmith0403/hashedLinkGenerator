@@ -10,12 +10,12 @@ import (
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	stripeGo "github.com/stripe/stripe-go/v84"
 
-	"adv/go-http/internal/account"
-	"adv/go-http/internal/mailer"
-	"adv/go-http/internal/models"
-	"adv/go-http/internal/payments/invoice"
-	"adv/go-http/internal/payments/plan"
-	"adv/go-http/internal/payments/subscription"
+	"link-generator/internal/account"
+	"link-generator/internal/mailer"
+	"link-generator/internal/models"
+	"link-generator/internal/payments/invoice"
+	"link-generator/internal/payments/plan"
+	"link-generator/internal/payments/subscription"
 )
 
 type InvoiceConsumerDeps struct {

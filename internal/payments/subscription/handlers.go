@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"adv/go-http/internal/account"
-	internalJWT "adv/go-http/internal/jwt"
-	"adv/go-http/internal/payments/plan"
-	errorType "adv/go-http/pkg/errorType"
-	"adv/go-http/pkg/middleware"
-	"adv/go-http/pkg/request"
-	"adv/go-http/pkg/response"
+	"link-generator/internal/account"
+	internalJWT "link-generator/internal/jwt"
+	"link-generator/internal/payments/plan"
+	errorType "link-generator/pkg/errorType"
+	"link-generator/pkg/middleware"
+	"link-generator/pkg/request"
+	"link-generator/pkg/response"
 
 	stripeGo "github.com/stripe/stripe-go/v84"
 )

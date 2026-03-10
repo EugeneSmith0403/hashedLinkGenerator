@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"log"
 
-	"adv/go-http/internal/account"
-	"adv/go-http/internal/models"
-	invoiceService "adv/go-http/internal/payments/invoice"
-	stripeServices "adv/go-http/internal/payments/stripe/services"
-	"adv/go-http/internal/payments/subscription"
-	"adv/go-http/internal/publishers"
-	rabbitmq "adv/go-http/pkg/rabbitMq"
+	"link-generator/internal/account"
+	"link-generator/internal/models"
+	invoiceService "link-generator/internal/payments/invoice"
+	stripeServices "link-generator/internal/payments/stripe/services"
+	"link-generator/internal/payments/subscription"
+	"link-generator/internal/publishers"
+	rabbitmq "link-generator/pkg/rabbitMq"
 
 	stripeGo "github.com/stripe/stripe-go/v84"
 )

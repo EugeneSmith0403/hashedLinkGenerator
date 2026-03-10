@@ -1,7 +1,7 @@
 package db
 
 import (
-	"adv/go-http/configs"
+	"link-generator/configs"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"

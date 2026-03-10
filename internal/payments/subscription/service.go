@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"adv/go-http/internal/payments/plan"
-	"adv/go-http/internal/payments/payment"
+	"link-generator/internal/payments/plan"
+	"link-generator/internal/payments/payment"
 
 	"github.com/stripe/stripe-go/v84"
 	stripeGo "github.com/stripe/stripe-go/v84"

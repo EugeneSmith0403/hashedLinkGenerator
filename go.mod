@@ -1,4 +1,4 @@
-module adv/go-http
+module link-generator
 
 go 1.25.5
 

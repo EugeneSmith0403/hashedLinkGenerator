@@ -1,6 +1,6 @@
 package shared
 
-import "adv/go-http/configs"
+import "link-generator/configs"
 
 func LoadConfigs(config ...*configs.Config) *configs.Config {
 	if len(config) > 0 {

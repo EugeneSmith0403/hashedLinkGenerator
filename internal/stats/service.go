@@ -1,7 +1,7 @@
 package stats
 
 import (
-	"adv/go-http/pkg/event"
+	"link-generator/pkg/event"
 	"log"
 )
 
