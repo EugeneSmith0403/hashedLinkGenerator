@@ -10,8 +10,9 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 - **Payment History**: Full audit trail of all payments per user
 - **Click Statistics**: Time-range and per-link analytics
 - **Async Event Processing**: RabbitMQ consumers for payment intents, subscriptions, and invoices
+- **Transactional Email**: SMTP mailer — welcome email on registration, payment confirmation on invoice paid
 - **Redis Caching**: Stats cache for performance
-- **Internationalization**: EN / RU / DE (frontend)
+- **Internationalization**: EN / RU / DE (frontend + email templates)
 
 ## Tech Stack
 
@@ -23,6 +24,8 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 - **Stripe Go SDK** (v84)
 - **golang-jwt/jwt**
 - **golang-migrate** (SQL migrations)
+- **wneessen/go-mail** (SMTP client)
+- **nicksnyder/go-i18n** (email template i18n)
 
 ### Frontend
 - **Nuxt 3** (Vue 3, TypeScript)
@@ -51,6 +54,10 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 │   ├── consts/                    # RabbitMQ exchange/queue/routing constants
 │   ├── consumers/                 # Consumer handler logic (paymentIntent, subscription, invoice)
 │   ├── jwt/                       # JWT service
+│   ├── locales/                   # Embedded email templates & i18n strings (EN/RU/DE)
+│   │   ├── auth/register/         # Welcome email (welcome.html + *.toml)
+│   │   └── invoice/succeed/       # Payment success email (payment_success.html + *.toml)
+│   ├── mailer/                    # SMTP mailer service (go-mail + go-i18n)
 │   ├── link/                      # Link CRUD + redirect
 │   ├── models/                    # Shared message/event models
 │   ├── publishers/                # RabbitMQ publishers (payment, subscription, invoice)
@@ -112,9 +119,18 @@ STRIPE_KEY="sk_test_..."
 STRIPE_WEBHOOK_SECRET="whsec_..."
 RABBITMQ_URL="amqp://guest:guest@localhost:5672/"
 RABBITMQ_CONSUMERS=1
+
+# Mailer (SMTP) — optional, emails are skipped if SMTP_HOST is empty
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=user@example.com
+SMTP_PASSWORD=your_smtp_password
+SMTP_FROM=no-reply@example.com
 ```
 
 `RABBITMQ_CONSUMERS` controls how many worker instances start per consumer type in `make dev` / `make consumers`.
+
+If `SMTP_HOST` is left empty, the mailer is disabled and no emails are sent.
 
 ### Running with Docker + Make
 
@@ -185,7 +201,8 @@ Stripe → POST /stripe/webhook
            └── invoice.payment_succeeded → Invoice exchange → invoiceQueue
                                                                     │
                                                           Invoice consumer
-                                                          (upsert invoice + payment record)
+                                                          (upsert invoice + payment record,
+                                                           send payment confirmation email)
 ```
 
 Each consumer binary:
@@ -254,7 +271,7 @@ Each consumer binary:
 3. `stripe.confirmCardSetup(clientSecret, {card})` — confirm card on frontend
 4. `POST /subscriptions {planId}` — create subscription
 5. Stripe fires `customer.subscription.created` → consumer creates local subscription + initial invoice
-6. Stripe fires `invoice.payment_succeeded` → consumer upserts invoice + payment record
+6. Stripe fires `invoice.payment_succeeded` → consumer upserts invoice + payment record + sends payment confirmation email
 
 ### PaymentIntent flow (one-time)
 
@@ -286,20 +303,12 @@ Each consumer binary:
 - **`GET /subscriptions/me`** — returns `204 No Content` when user has no subscription
 - **`isPaymentIntent`** field — `true` when `billing_id` starts with `pi_`, drives cancel button behavior
 - **Consumer startup** — each consumer creates its own RabbitMQ exchange/queue on init, safe to start independently
+- **Mailer** — `internal/mailer/` is a shared SMTP client; `AuthMailer` sends welcome email on registration; `InvoiceConsumer` sends payment confirmation asynchronously (goroutine) after invoice paid; if `SMTP_HOST` is empty, all sends are silently skipped
+- **Email i18n** — templates live in `internal/locales/` (embedded via `embed.FS`), translated via `go-i18n` + TOML files (EN/RU/DE)
 
 ## Roadmap
 
-### 1. Invoice Email Delivery
-
-Send invoice PDFs by email after successful payment (RabbitMQ infrastructure is already in place).
-
-- Add SMTP / SendGrid mailer (`internal/mailer/`)
-- Subscribe to `invoiceQueue` or add a new email queue in the invoice consumer
-- Email template: amount, plan name, period, PDF link from Stripe
-
----
-
-### 2. Extended Auth — User Agent, IP, Session Table
+### 1. Extended Auth — User Agent, IP, Session Table
 
 - Create `auth_sessions` table: `id`, `user_id`, `ip`, `user_agent`, `created_at`
 - Parse headers in login/register handlers
@@ -307,7 +316,7 @@ Send invoice PDFs by email after successful payment (RabbitMQ infrastructure is 
 
 ---
 
-### 3. Columnar DB for Click Statistics
+### 2. Columnar DB for Click Statistics
 
 - Introduce **ClickHouse** or **TimescaleDB** for analytical queries
 - Publish click events with geo/device metadata
@@ -315,7 +324,7 @@ Send invoice PDFs by email after successful payment (RabbitMQ infrastructure is 
 
 ---
 
-### 4. Rate Limiting (RPS)
+### 3. Rate Limiting (RPS)
 
 - Token-bucket limiter via Redis
 - Global IP-based + per-user quotas configurable per plan
@@ -323,7 +332,7 @@ Send invoice PDFs by email after successful payment (RabbitMQ infrastructure is 
 
 ---
 
-### 5. Scaling & Monitoring
+### 4. Scaling & Monitoring
 
 - Horizontal scaling with stateless Go instances
 - Prometheus metrics endpoint, OpenTelemetry tracing
