@@ -1,13 +1,11 @@
 package auth
 
 import (
-	"link-generator/configs"
-	internalJWT "link-generator/internal/jwt"
 	"link-generator/pkg/response"
 )
 
 // NewAuthHandlerForTest создает AuthHandler для тестов
-func NewAuthHandlerForTest(config *configs.Config, authService *AuthService, jwtService *internalJWT.JWTService) *AuthHandler {
+func NewAuthHandlerForTest(authService *AuthService) *AuthHandler {
 	headersMap := map[string]string{
 		"Content-Type": "application/json",
 	}
@@ -17,10 +15,8 @@ func NewAuthHandlerForTest(config *configs.Config, authService *AuthService, jwt
 	}
 
 	return &AuthHandler{
-		Config:      config,
 		responsePkg: *response.NewResponse(options),
 		AuthService: authService,
-		JWTService:  jwtService,
 	}
 }
 

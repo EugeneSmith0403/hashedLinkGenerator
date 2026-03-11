@@ -9,6 +9,14 @@ const auth = useAuthStore()
 const router = useRouter()
 const localePath = useLocalePath()
 const queryClient = useQueryClient()
+const config = useRuntimeConfig()
+
+// Step 1: credentials | Step 2: 2FA code
+const step = ref<'credentials' | 'twoFactor'>('credentials')
+
+// Temporary token stored after login, before 2FA is confirmed
+const pendingToken = ref<string | null>(null)
+const pendingEmail = ref<string | null>(null)
 
 const { handleSubmit, errors } = useForm({
   validationSchema: toTypedSchema(loginSchema),
@@ -17,20 +25,83 @@ const { handleSubmit, errors } = useForm({
 const { value: email, handleBlur: blurEmail, handleChange: changeEmail } = useField<string>('email')
 const { value: password, handleBlur: blurPassword, handleChange: changePassword } = useField<string>('password')
 
-const { mutate, isPending, error } = useMutation({
+const loginError = ref('')
+
+const { mutate, isPending } = useMutation({
   mutationFn: () => useAuthService().login({ email: email.value, password: password.value }),
   onSuccess(data) {
     queryClient.clear()
-    auth.setAuth(data.token, data.email)
+    loginError.value = ''
+
+    if (data.is2faEnabled) {
+      pendingToken.value = data.token
+      pendingEmail.value = data.email
+      step.value = 'twoFactor'
+      return
+    }
+
+    auth.setAuth(data.token, data.email, false)
     router.push(localePath('/dashboard'))
+  },
+  onError(err) {
+    loginError.value = (err as Error).message
   },
 })
 
 const onSubmit = handleSubmit(() => mutate())
+
+// --- 2FA step ---
+const totpCode = ref('')
+const totpError = ref('')
+const totpPending = ref(false)
+
+async function submitTotpCode() {
+  if (!/^\d{6}$/.test(totpCode.value)) {
+    totpError.value = t('account.twoFactor.invalidCode')
+    return
+  }
+  totpError.value = ''
+  totpPending.value = true
+
+  try {
+    const res = await fetch(`${config.public.apiBase}/users/2fa/verify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${pendingToken.value}`,
+      },
+      body: JSON.stringify({ code: totpCode.value, email: pendingEmail.value }),
+    })
+
+    if (!res.ok) {
+      totpError.value = t('account.twoFactor.wrongCode')
+      return
+    }
+
+    const data = await res.json()
+    auth.setAuth(data.token, pendingEmail.value!, true)
+    router.push(localePath('/dashboard'))
+  }
+  catch {
+    totpError.value = t('account.twoFactor.wrongCode')
+  }
+  finally {
+    totpPending.value = false
+  }
+}
+
+function backToCredentials() {
+  step.value = 'credentials'
+  totpCode.value = ''
+  totpError.value = ''
+  pendingToken.value = null
+  pendingEmail.value = null
+}
 </script>
 
 <template>
-  <form class="space-y-5" @submit.prevent="onSubmit">
+  <!-- Step 1: email + password -->
+  <form v-if="step === 'credentials'" class="space-y-5" @submit.prevent="onSubmit">
     <div>
       <h2 class="text-xl font-bold text-gray-900">{{ t('auth.loginTitle') }}</h2>
       <p class="text-sm text-gray-500 mt-1">{{ t('auth.loginSubtitle') }}</p>
@@ -60,7 +131,7 @@ const onSubmit = handleSubmit(() => mutate())
       @change="changePassword"
     />
 
-    <p v-if="error" class="text-sm text-red-600">{{ (error as Error).message }}</p>
+    <p v-if="loginError" class="text-sm text-red-600">{{ loginError }}</p>
 
     <UiButton type="submit" class="w-full" :loading="isPending">
       {{ t('auth.login') }}
@@ -73,4 +144,39 @@ const onSubmit = handleSubmit(() => mutate())
       </NuxtLink>
     </p>
   </form>
+
+  <!-- Step 2: 2FA code -->
+  <div v-else-if="step === 'twoFactor'" class="space-y-5">
+    <div>
+      <h2 class="text-xl font-bold text-gray-900">{{ t('auth.twoFactorTitle') }}</h2>
+      <p class="text-sm text-gray-500 mt-1">{{ t('auth.twoFactorSubtitle') }}</p>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1.5">
+        {{ t('account.twoFactor.codeLabel') }}
+      </label>
+      <input
+        v-model="totpCode"
+        type="text"
+        inputmode="numeric"
+        autocomplete="one-time-code"
+        maxlength="6"
+        :placeholder="t('account.twoFactor.codePlaceholder')"
+        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-center text-2xl tracking-[0.5em] font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+      />
+      <p v-if="totpError" class="mt-1.5 text-sm text-red-600">{{ totpError }}</p>
+    </div>
+
+    <UiButton class="w-full" :loading="totpPending" @click="submitTotpCode">
+      {{ t('auth.twoFactorVerify') }}
+    </UiButton>
+
+    <button
+      class="w-full text-sm text-gray-500 hover:text-gray-700 text-center"
+      @click="backToCredentials"
+    >
+      {{ t('auth.backToLogin') }}
+    </button>
+  </div>
 </template>

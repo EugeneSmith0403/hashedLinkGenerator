@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"link-generator/internal/auth"
 	internalJWT "link-generator/internal/jwt"
 	"context"
 	"net/http"
@@ -13,7 +12,8 @@ import (
 type key string
 
 const (
-	ContextEmailKey key = "ContextEmailKey"
+	ContextEmailKey key    = "ContextEmailKey"
+	unauthorized    string = "Unauthorized"
 )
 
 func IsAuthed(jwtService *internalJWT.JWTService) func(http.Handler) http.Handler {
@@ -21,14 +21,14 @@ func IsAuthed(jwtService *internalJWT.JWTService) func(http.Handler) http.Handle
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			parts := strings.Split(r.Header.Get("Authorization"), "Bearer ")
 			if len(parts) != 2 {
-				sendJSONError(w, auth.Unauthorized, http.StatusUnauthorized)
+				sendJSONError(w, unauthorized, http.StatusUnauthorized)
 				return
 			}
 
 			claims := &jwt.MapClaims{}
 			checkedClaims, err := jwtService.CheckToken(strings.TrimSpace(parts[1]), claims)
 			if err != nil {
-				sendJSONError(w, auth.Unauthorized, http.StatusUnauthorized)
+				sendJSONError(w, unauthorized, http.StatusUnauthorized)
 				return
 			}
 

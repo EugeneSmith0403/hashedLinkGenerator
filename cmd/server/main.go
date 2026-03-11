@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"link-generator/api"
@@ -18,6 +19,7 @@ import (
 	"link-generator/internal/link"
 	"link-generator/internal/locales"
 	"link-generator/internal/mailer"
+	"link-generator/internal/models"
 	"link-generator/internal/payments/invoice"
 	"link-generator/internal/payments/payment"
 	"link-generator/internal/payments/plan"
@@ -99,9 +101,16 @@ func newApp(cfg *configs.Config) *app {
 		StripeClient: stripeClient,
 	})
 
+	jwtService := jwt.NewJWTService(jwt.JwtDeps{Secret: cfg.Auth.Secret, RedisSrvice: redis})
+
 	svc := &services{
-		auth: auth.NewAuthService(repos.user),
-		jwt:  jwt.NewJWTService(jwt.JwtDeps{Secret: cfg.Auth.Secret, RedisSrvice: redis}),
+		auth: auth.NewAuthService(auth.AuthServiceDeps{
+			UserRepository: repos.user,
+			Config:         cfg,
+			JWTService:     jwtService,
+			RedisService:   redis,
+		}),
+		jwt:  jwtService,
 		stats: stats.NewStatsService(&stats.StatServiceDep{
 			EventBus:        eventBus,
 			StatsRepository: repos.stats,
@@ -137,14 +146,38 @@ func newApp(cfg *configs.Config) *app {
 	return &app{cfg: cfg, db: database, repos: repos, svc: svc, redis: redis, eventBus: eventBus, rabbitMq: rabbitMq}
 }
 
+type subscriptionUserAdapter struct {
+	svc *subscription.SubscriptionService
+}
+
+func (a *subscriptionUserAdapter) GetSubscriptionByUserID(userID uint) (*models.SubscriptionInfo, error) {
+	sub, err := a.svc.GetSubscriptionByUserId(userID)
+	if err != nil {
+		return nil, err
+	}
+	if sub == nil {
+		return nil, nil
+	}
+	return &models.SubscriptionInfo{
+		ID:                 sub.ID,
+		CreatedAt:          sub.CreatedAt,
+		PlanID:             sub.PlanID,
+		Status:             string(sub.Status),
+		CurrentPeriodStart: sub.CurrentPeriodStart,
+		CurrentPeriodEnd:   sub.CurrentPeriodEnd,
+		CancelAt:           sub.CancelAt,
+		CanceledAt:         sub.CanceledAt,
+		TrialStart:         sub.TrialStart,
+		TrialEnd:           sub.TrialEnd,
+		IsPaymentIntent:    strings.HasPrefix(sub.BillingID, "pi_"),
+	}, nil
+}
+
 func (a *app) registerHandlers(router *http.ServeMux) {
 	router.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 
 	auth.NewAuthHandlers(router, auth.AuthHandlerDeps{
-		Config:      a.cfg,
 		AuthService: a.svc.auth,
-		JWTService:  a.svc.jwt,
-		RedisSrvice: a.redis,
 		AuthMailerDeps: auth.AuthMailerDeps{
 			Mailer: mailer.NewMailer(mailer.MailerDeps{
 				LocalesFS:  locales.FS,
@@ -158,6 +191,7 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 			AppName:    "Go Adv",
 			AppURL:     a.cfg.Stripe.ReturnURL,
 		},
+		AccountService: a.svc.account,
 	})
 	link.NewLinkHandler(router, link.LinkHandlerDeps{
 		Config:              a.cfg,
@@ -209,6 +243,13 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 		SubscriptionService:    a.svc.subscription,
 		AccountRepository:      a.repos.account,
 		RabbitMq:               a.rabbitMq,
+	})
+	user.NewUserHandlers(router, user.UserHandlerDeps{
+		UserRepository:      a.repos.user,
+		AccountService:      a.svc.account,
+		SubscriptionService: &subscriptionUserAdapter{svc: a.svc.subscription},
+		AuthService:         a.svc.auth,
+		JWTService:          a.svc.jwt,
 	})
 
 	api.RegisterDocsRoutes(router, "api/openapi.yaml")

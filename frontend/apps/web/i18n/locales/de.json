@@ -10,7 +10,8 @@
     "createdAt": "Erstellt",
     "save": "Speichern",
     "loading": "Wird geladen...",
-    "payments": "Zahlungen"
+    "payments": "Zahlungen",
+    "account": "Konto"
   },
   "auth": {
     "loginTitle": "Willkommen zurück",
@@ -25,7 +26,34 @@
     "register": "Registrieren",
     "createAccount": "Konto erstellen",
     "noAccount": "Noch kein Konto?",
-    "haveAccount": "Bereits ein Konto vorhanden?"
+    "haveAccount": "Bereits ein Konto vorhanden?",
+    "twoFactorTitle": "Zwei-Faktor-Authentifizierung",
+    "twoFactorSubtitle": "Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein",
+    "twoFactorVerify": "Bestätigen",
+    "backToLogin": "Zurück zur Anmeldung"
+  },
+  "account": {
+    "title": "Kontoeinstellungen",
+    "subtitle": "Profil und Sicherheitseinstellungen verwalten",
+    "profileTitle": "Profil",
+    "emailVerified": "E-Mail-Adresse",
+    "setupRequiredBanner": "Bitte richten Sie die Zwei-Faktor-Authentifizierung ein, um Ihr Konto zu schützen und auf die Plattform zuzugreifen.",
+    "twoFactor": {
+      "title": "Zwei-Faktor-Authentifizierung",
+      "subtitle": "Fügen Sie Ihrem Konto eine zusätzliche Sicherheitsebene hinzu",
+      "enabled": "Aktiviert",
+      "disabled": "Deaktiviert",
+      "notEnabledWarning": "Die Zwei-Faktor-Authentifizierung ist nicht aktiviert. Wir empfehlen dringend, sie zum Schutz Ihres Kontos zu aktivieren.",
+      "enableButton": "2FA aktivieren",
+      "scanInstruction": "Scannen Sie den QR-Code unten mit Ihrer Authenticator-App (Google Authenticator, Authy usw.).",
+      "manualEntry": "Oder geben Sie den Schlüssel manuell ein:",
+      "codeLabel": "Bestätigungscode",
+      "codePlaceholder": "000000",
+      "invalidCode": "Bitte geben Sie einen gültigen 6-stelligen Code ein",
+      "wrongCode": "Falscher Code. Bitte versuchen Sie es erneut.",
+      "verifyButton": "Bestätigen und aktivieren",
+      "enabledMessage": "Die Zwei-Faktor-Authentifizierung ist aktiv. Ihr Konto ist geschützt."
+    }
   },
   "dashboard": {
     "title": "Meine Links",

@@ -10,7 +10,8 @@
     "createdAt": "Created",
     "save": "Save",
     "loading": "Loading...",
-    "payments": "Payments"
+    "payments": "Payments",
+    "account": "Account"
   },
   "auth": {
     "loginTitle": "Welcome back",
@@ -25,7 +26,34 @@
     "register": "Register",
     "createAccount": "Create account",
     "noAccount": "Don't have an account?",
-    "haveAccount": "Already have an account?"
+    "haveAccount": "Already have an account?",
+    "twoFactorTitle": "Two-factor authentication",
+    "twoFactorSubtitle": "Enter the 6-digit code from your authenticator app",
+    "twoFactorVerify": "Verify",
+    "backToLogin": "Back to sign in"
+  },
+  "account": {
+    "title": "Account settings",
+    "subtitle": "Manage your profile and security settings",
+    "profileTitle": "Profile",
+    "emailVerified": "Email address",
+    "setupRequiredBanner": "Please set up two-factor authentication to secure your account and access the platform.",
+    "twoFactor": {
+      "title": "Two-factor authentication",
+      "subtitle": "Add an extra layer of security to your account",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "notEnabledWarning": "Two-factor authentication is not enabled. We strongly recommend enabling it to protect your account.",
+      "enableButton": "Enable 2FA",
+      "scanInstruction": "Scan the QR code below with your authenticator app (Google Authenticator, Authy, etc.).",
+      "manualEntry": "Or enter the key manually:",
+      "codeLabel": "Verification code",
+      "codePlaceholder": "000000",
+      "invalidCode": "Please enter a valid 6-digit code",
+      "wrongCode": "Incorrect code. Please try again.",
+      "verifyButton": "Verify and enable",
+      "enabledMessage": "Two-factor authentication is active. Your account is protected."
+    }
   },
   "dashboard": {
     "title": "My Links",

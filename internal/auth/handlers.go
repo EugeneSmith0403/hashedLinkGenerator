@@ -1,36 +1,24 @@
 package auth
 
 import (
-	"link-generator/configs"
-	internalJWT "link-generator/internal/jwt"
+	"link-generator/internal/models"
 	errorType "link-generator/pkg/errorType"
-	"link-generator/pkg/helpers"
-	"link-generator/pkg/redis"
 	"link-generator/pkg/request"
 	"link-generator/pkg/response"
-	"fmt"
 	"net/http"
-	"strconv"
-	"time"
-
-	"github.com/golang-jwt/jwt/v5"
 )
 
 type AuthHandlerDeps struct {
-	*configs.Config
 	AuthService    *AuthService
-	JWTService     *internalJWT.JWTService
-	RedisSrvice    *redis.Redis
 	AuthMailerDeps AuthMailerDeps
+	AccountService models.IAccountService
 }
 
 type AuthHandler struct {
-	*configs.Config
-	responsePkg response.Response
-	AuthService *AuthService
-	JWTService  *internalJWT.JWTService
-	RedisSrvice *redis.Redis
-	authMailer  *AuthMailer
+	responsePkg    response.Response
+	AuthService    *AuthService
+	authMailer     *AuthMailer
+	AccountService models.IAccountService
 }
 
 func NewAuthHandlers(router *http.ServeMux, deps AuthHandlerDeps) {
@@ -43,12 +31,10 @@ func NewAuthHandlers(router *http.ServeMux, deps AuthHandlerDeps) {
 		HeadersMap: headersMap,
 	}
 	handler := &AuthHandler{
-		Config:      deps.Config,
-		responsePkg: *response.NewResponse(options),
-		AuthService: deps.AuthService,
-		JWTService:  deps.JWTService,
-		RedisSrvice: deps.RedisSrvice,
-		authMailer:  NewAuthMailer(deps.AuthMailerDeps),
+		responsePkg:    *response.NewResponse(options),
+		AuthService:    deps.AuthService,
+		authMailer:     NewAuthMailer(deps.AuthMailerDeps),
+		AccountService: deps.AccountService,
 	}
 	router.HandleFunc("POST /auth/login", handler.Login())
 	router.HandleFunc("POST /auth/register", handler.Register())
@@ -81,14 +67,11 @@ func (auth *AuthHandler) Login() http.HandlerFunc {
 			})
 			return
 		}
-		now := time.Now()
-		expiredHours, expiredHoursErr := strconv.Atoi(auth.Config.Auth.ExpiredAt)
 
-		if err != nil {
+		accInfo, accErr := auth.AccountService.GetAccountInfoByEmail(body.Email)
+		if accErr != nil {
 			auth.responsePkg.Json(&response.JsonOptions{
-				Data: errorType.ErrorType{
-					Error: expiredHoursErr.Error(),
-				},
+				Data:   errorType.ErrorType{Error: accErr.Error()},
 				Writer: w,
 				Reader: req,
 				Code:   http.StatusInternalServerError,
@@ -96,37 +79,27 @@ func (auth *AuthHandler) Login() http.HandlerFunc {
 			return
 		}
 
-		expirationTime := now.Add(helpers.ToHours(expiredHours)).Unix()
+		var token string
 
-		claims := jwt.MapClaims{
-			"email":     body.Email,
-			"createdAt": now,
-			"exp":       expirationTime,
-			"iat":       now.Unix(),
-		}
-
-		token, tokenErr := auth.JWTService.GenerateToken(&claims)
-
-		if tokenErr != nil {
-			auth.responsePkg.Json(&response.JsonOptions{
-				Data: errorType.ErrorType{
-					Error: tokenErr.Error(),
-				},
-				Writer: w,
-				Reader: req,
-				Code:   http.StatusInternalServerError,
-			})
-			return
+		if !accInfo.Is2FAEnabled {
+			generatedToken, tokenErr := auth.AuthService.GenerateToken(body.Email)
+			if tokenErr != nil {
+				auth.responsePkg.Json(&response.JsonOptions{
+					Data:   errorType.ErrorType{Error: tokenErr.Error()},
+					Writer: w,
+					Reader: req,
+					Code:   http.StatusInternalServerError,
+				})
+				return
+			}
+			token = generatedToken
 		}
 
 		res := &LoginResponse{
-			Token: token,
-			Email: body.Email,
+			Token:        token,
+			Is2FAEnabled: accInfo.Is2FAEnabled,
+			Email:        body.Email,
 		}
-
-		userKey := fmt.Sprintf("token:%s", body.Email)
-
-		auth.RedisSrvice.Set(userKey, true, time.Duration(expirationTime))
 
 		auth.responsePkg.Json(&response.JsonOptions{
 			Data:   res,
@@ -168,18 +141,7 @@ func (auth *AuthHandler) Register() http.HandlerFunc {
 			return
 		}
 
-		now := time.Now()
-		expiredHours, _ := strconv.Atoi(auth.Config.Auth.ExpiredAt)
-		expirationTime := now.Add(helpers.ToHours(expiredHours)).Unix()
-
-		claims := jwt.MapClaims{
-			"email":     email,
-			"createdAt": now,
-			"exp":       expirationTime,
-			"iat":       now.Unix(),
-		}
-
-		token, tokenErr := auth.JWTService.GenerateToken(&claims)
+		token, tokenErr := auth.AuthService.GenerateToken(email)
 		if tokenErr != nil {
 			auth.responsePkg.Json(&response.JsonOptions{
 				Data:   errorType.ErrorType{Error: tokenErr.Error()},
@@ -191,15 +153,9 @@ func (auth *AuthHandler) Register() http.HandlerFunc {
 		}
 
 		res := &RegisterResponse{
-			LoginResponse: &LoginResponse{
-				Email: email,
-				Token: token,
-			},
+			Email: email,
+			Token: token,
 		}
-
-		userKey := fmt.Sprintf("token:%s", body.Email)
-
-		auth.RedisSrvice.Set(userKey, true, time.Duration(expirationTime))
 
 		go auth.authMailer.SendWelcomeEmail(body.Name, email, "en")
 

@@ -55,7 +55,19 @@ func NewLinkHandler(router *http.ServeMux, deps LinkHandlerDeps) {
 	)
 	createMiddleware := middleware.Chain(
 		middleware.IsAuthed(deps.JWTService),
-		middleware.HasActiveSubscription(deps.UserRepository, deps.SubscriptionService),
+		middleware.HasActiveSubscription(
+			func(email string) (uint, error) {
+				u, err := deps.UserRepository.FindByEmail(email)
+				if err != nil {
+					return 0, err
+				}
+				if u == nil {
+					return 0, fmt.Errorf("user not found")
+				}
+				return u.ID, nil
+			},
+			deps.SubscriptionService,
+		),
 	)
 
 	router.HandleFunc("GET /{hash}", handler.GetTo())

@@ -21,9 +21,9 @@ const { mutate, isPending, error } = useMutation({
   mutationFn: () =>
     useAuthService().register({ name: name.value, email: email.value, password: password.value }),
   async onSuccess(data) {
-    auth.setAuth(data.token, data.email)
+    auth.setAuth(data.token, data.email, false, true)
     await useAccountService().create()
-    router.push(localePath('/dashboard'))
+    router.push(localePath('/account'))
   },
 })
 

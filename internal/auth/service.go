@@ -1,21 +1,68 @@
 package auth
 
 import (
-	"link-generator/internal/user"
-	"link-generator/pkg/di"
 	"errors"
+	"fmt"
+	"link-generator/configs"
+	internalJWT "link-generator/internal/jwt"
+	"link-generator/internal/user"
+	"link-generator/pkg/helpers"
+	"link-generator/pkg/redis"
+	"strconv"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
-type AuthService struct {
-	UserRepository di.IUserRepository
+type AuthServiceDeps struct {
+	UserRepository *user.UserRepository
+	Config         *configs.Config
+	JWTService     *internalJWT.JWTService
+	RedisService   *redis.Redis
 }
 
-func NewAuthService(userRep di.IUserRepository) *AuthService {
+type AuthService struct {
+	UserRepository *user.UserRepository
+	Config         *configs.Config
+	JWTService     *internalJWT.JWTService
+	RedisService   *redis.Redis
+}
+
+func NewAuthService(deps AuthServiceDeps) *AuthService {
 	return &AuthService{
-		UserRepository: userRep,
+		UserRepository: deps.UserRepository,
+		Config:         deps.Config,
+		JWTService:     deps.JWTService,
+		RedisService:   deps.RedisService,
 	}
+}
+
+func (service *AuthService) GenerateToken(email string) (string, error) {
+	now := time.Now()
+	expiredHours, err := strconv.Atoi(service.Config.Auth.ExpiredAt)
+	if err != nil {
+		return "", err
+	}
+
+	expirationTime := now.Add(helpers.ToHours(expiredHours)).Unix()
+
+	claims := jwt.MapClaims{
+		"email":     email,
+		"createdAt": now,
+		"exp":       expirationTime,
+		"iat":       now.Unix(),
+	}
+
+	token, tokenErr := service.JWTService.GenerateToken(&claims)
+	if tokenErr != nil {
+		return "", tokenErr
+	}
+
+	userKey := fmt.Sprintf("token:%s", email)
+	service.RedisService.Set(userKey, true, time.Duration(expirationTime))
+
+	return token, nil
 }
 
 func (service *AuthService) Login(email, password string) bool {

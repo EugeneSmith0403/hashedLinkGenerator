@@ -53,7 +53,7 @@ const { mutateAsync: createAccount } = useMutation({
 
 const { mutateAsync: createSubscription } = useMutation({
   mutationFn: (planId: number) => useSubscriptionService().create(planId),
-  onSuccess: () => queryClient.invalidateQueries({ queryKey: ['subscription'] }),
+  onSuccess: () => queryClient.invalidateQueries({ queryKey: ['me'] }),
 })
 
 async function saveCard() {
