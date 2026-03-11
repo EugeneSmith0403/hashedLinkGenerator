@@ -5,6 +5,7 @@ import (
 	authsession "link-generator/internal/auth_session"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type key string
@@ -30,11 +31,9 @@ func IsAuthed(authSession authsession.AuthSessionService, verify ...bool) func(h
 				return
 			}
 
-			// isExpired := res.Expires_at.Before(time.Now())
-			// TODO fixed time expiration
-			isExpired := true
+			isExpired := res.Expires_at.Before(time.Now())
 
-			if !res.Is_active || isExpired || (len(verify) == 0 && res.Is_verify) {
+			if !res.Is_active || isExpired || (len(verify) == 0 && !res.Is_verify) {
 				sendJSONError(w, unauthorized, http.StatusUnauthorized)
 				return
 			}
