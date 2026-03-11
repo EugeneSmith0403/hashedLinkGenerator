@@ -46,7 +46,7 @@ const nav = computed(() =>
           :key="item.to"
           :to="localePath(item.to)"
           class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-          active-class="bg-indigo-50 text-indigo-700"
+          exact-active-class="bg-indigo-50 text-indigo-700"
           inactive-class="text-gray-600 hover:bg-gray-100 hover:text-gray-900"
         >
           <svg class="h-5 w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
