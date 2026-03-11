@@ -49,9 +49,9 @@ func NewAccountService(accRep AccountServiceDeps) *AccountService {
 	}
 }
 
-func (s *AccountService) GetAccountByEmail(email string) (*Account, error) {
+func (s *AccountService) GetAccountByEmail(email string) (*models.Account, error) {
 	if cached := s.redis.Get(accountCacheKey(email)); cached != "" {
-		var account Account
+		var account models.Account
 		if err := json.Unmarshal([]byte(cached), &account); err == nil {
 			return &account, nil
 		}
@@ -78,7 +78,7 @@ func (s *AccountService) GetAccountByEmail(email string) (*Account, error) {
 	return foundAccount, nil
 }
 
-func (rep *AccountService) UpdateAccount(userId uint, name, email string) (*Account, error) {
+func (rep *AccountService) UpdateAccount(userId uint, name, email string) (*models.Account, error) {
 	account, err := rep.AccountRepository.FindByUserId(userId)
 	if err != nil {
 		return nil, err
@@ -97,7 +97,7 @@ func (rep *AccountService) UpdateAccount(userId uint, name, email string) (*Acco
 	return account, nil
 }
 
-func (rep *AccountService) CreateAccount(userId uint, name, email string) (*Account, error) {
+func (rep *AccountService) CreateAccount(userId uint, name, email string) (*models.Account, error) {
 
 	existedAccount, accErr := rep.AccountRepository.FindById(userId)
 
@@ -115,10 +115,10 @@ func (rep *AccountService) CreateAccount(userId uint, name, email string) (*Acco
 		return nil, custErr
 	}
 
-	createdAccount, err := rep.AccountRepository.Create(&Account{
+	createdAccount, err := rep.AccountRepository.Create(&models.Account{
 		CustomerID:    customer.ID,
-		AccountStatus: StatusActive,
-		Provider:      ProviderStripe,
+		AccountStatus: models.StatusActive,
+		Provider:      models.ProviderStripe,
 		UserID:        userId,
 	})
 
@@ -131,7 +131,7 @@ func (rep *AccountService) CreateAccount(userId uint, name, email string) (*Acco
 	return createdAccount, nil
 }
 
-func (s *AccountService) setAccountCache(email string, account *Account) {
+func (s *AccountService) setAccountCache(email string, account *models.Account) {
 	if data, err := json.Marshal(account); err == nil {
 		s.redis.Set(accountCacheKey(email), string(data), accountCacheTTL)
 	}

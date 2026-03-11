@@ -3,9 +3,10 @@ package user
 import (
 	"net/http"
 
-	internalJWT "link-generator/internal/jwt"
+	authsession "link-generator/internal/auth_session"
 	"link-generator/internal/models"
 	errorType "link-generator/pkg/errorType"
+	"link-generator/pkg/helpers"
 	"link-generator/pkg/middleware"
 	"link-generator/pkg/request"
 	"link-generator/pkg/response"
@@ -28,7 +29,7 @@ type UserHandlerDeps struct {
 	AccountService      models.IAccountService
 	SubscriptionService models.ISubscriptionService
 	AuthService         models.IAuthService
-	JWTService          *internalJWT.JWTService
+	AuthSeseionService  *authsession.AuthSessionService
 }
 
 type UserHandler struct {
@@ -36,6 +37,7 @@ type UserHandler struct {
 	accountService      models.IAccountService
 	subscriptionService models.ISubscriptionService
 	authService         models.IAuthService
+	authSeseionService  *authsession.AuthSessionService
 	responsePkg         response.Response
 }
 
@@ -45,13 +47,14 @@ func NewUserHandlers(router *http.ServeMux, deps UserHandlerDeps) {
 		accountService:      deps.AccountService,
 		subscriptionService: deps.SubscriptionService,
 		authService:         deps.AuthService,
+		authSeseionService:  deps.AuthSeseionService,
 		responsePkg: *response.NewResponse(&response.ResponseOptions{
 			HeadersMap: map[string]string{"Content-Type": "application/json"},
 		}),
 	}
 
 	authMiddleware := middleware.Chain(
-		middleware.IsAuthed(deps.JWTService),
+		middleware.IsAuthed(*deps.AuthSeseionService),
 	)
 
 	router.Handle("GET /users/me", authMiddleware(handler.handleGetMe()))
@@ -72,7 +75,7 @@ func (h *UserHandler) handleGetMe() http.HandlerFunc {
 			return
 		}
 
-		foundUser, err := h.userRepository.FindByEmail(email)
+		foundUser, err := h.userRepository.FindByEmailWithAccounts(email)
 		if err != nil {
 			h.responsePkg.Json(&response.JsonOptions{
 				Data:   errorType.ErrorType{Error: err.Error()},
@@ -92,16 +95,16 @@ func (h *UserHandler) handleGetMe() http.HandlerFunc {
 			return
 		}
 
-		accInfo, accErr := h.accountService.GetAccountInfoByEmail(email)
-		if accErr != nil {
+		if len(foundUser.Accounts) == 0 {
 			h.responsePkg.Json(&response.JsonOptions{
-				Data:   errorType.ErrorType{Error: accErr.Error()},
+				Data:   errorType.ErrorType{Error: "Account not found"},
 				Writer: w,
 				Reader: r,
 				Code:   http.StatusInternalServerError,
 			})
 			return
 		}
+		accInfo := foundUser.Accounts[0]
 
 		resp := &UserMeResponse{
 			ID:           foundUser.Model.ID,
@@ -181,13 +184,64 @@ func (h *UserHandler) handler2FaVerify() http.HandlerFunc {
 			return
 		}
 
-		token, tokenErr := h.authService.GenerateToken(body.Email)
+		token, expTime, tokenErr := h.authService.GenerateToken(body.Email)
 		if tokenErr != nil {
 			h.responsePkg.Json(&response.JsonOptions{
 				Data:   errorType.ErrorType{Error: tokenErr.Error()},
 				Writer: w,
 				Reader: req,
 				Code:   http.StatusInternalServerError,
+			})
+			return
+		}
+
+		foundUser, err := h.userRepository.FindByEmailWithAccounts(body.Email)
+		if err != nil {
+			h.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: err.Error()},
+				Writer: w,
+				Reader: req,
+				Code:   http.StatusInternalServerError,
+			})
+			return
+		}
+		if foundUser == nil {
+			h.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: "user not found"},
+				Writer: w,
+				Reader: req,
+				Code:   http.StatusNotFound,
+			})
+			return
+		}
+
+		if len(foundUser.Accounts) == 0 {
+			h.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: "Account not found"},
+				Writer: w,
+				Reader: req,
+				Code:   http.StatusNotFound,
+			})
+			return
+		}
+
+		options := &authsession.AddOptions{
+			AccountID: foundUser.Accounts[0].ID,
+			Token:     token,
+			IpAddress: helpers.GetClientIP(req),
+			UserAgent: req.UserAgent(),
+			IsVerify:  isValid,
+			ExpiresAt: expTime,
+		}
+
+		_, authSessErr := h.authSeseionService.Update(options)
+
+		if authSessErr != nil {
+			h.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: authSessErr.Error()},
+				Writer: w,
+				Reader: req,
+				Code:   http.StatusNotFound,
 			})
 			return
 		}

@@ -1,8 +1,8 @@
 package di
 
-import "link-generator/internal/user"
+import "link-generator/internal/models"
 
 type IUserRepository interface {
-	Create(u *user.User) (*user.User, error)
-	FindByEmail(email string) (*user.User, error)
+	Create(u *models.User) (*models.User, error)
+	FindByEmail(email string) (*models.User, error)
 }

@@ -1,24 +1,28 @@
 package auth
 
 import (
+	authsession "link-generator/internal/auth_session"
 	"link-generator/internal/models"
 	errorType "link-generator/pkg/errorType"
+	"link-generator/pkg/helpers"
 	"link-generator/pkg/request"
 	"link-generator/pkg/response"
 	"net/http"
 )
 
 type AuthHandlerDeps struct {
-	AuthService    *AuthService
-	AuthMailerDeps AuthMailerDeps
-	AccountService models.IAccountService
+	AuthService        *AuthService
+	AuthMailerDeps     AuthMailerDeps
+	AccountService     models.IAccountService
+	AuthSeseionService *authsession.AuthSessionService
 }
 
 type AuthHandler struct {
-	responsePkg    response.Response
-	AuthService    *AuthService
-	authMailer     *AuthMailer
-	AccountService models.IAccountService
+	responsePkg        response.Response
+	AuthService        *AuthService
+	authMailer         *AuthMailer
+	AccountService     models.IAccountService
+	AuthSeseionService *authsession.AuthSessionService
 }
 
 func NewAuthHandlers(router *http.ServeMux, deps AuthHandlerDeps) {
@@ -31,10 +35,11 @@ func NewAuthHandlers(router *http.ServeMux, deps AuthHandlerDeps) {
 		HeadersMap: headersMap,
 	}
 	handler := &AuthHandler{
-		responsePkg:    *response.NewResponse(options),
-		AuthService:    deps.AuthService,
-		authMailer:     NewAuthMailer(deps.AuthMailerDeps),
-		AccountService: deps.AccountService,
+		responsePkg:        *response.NewResponse(options),
+		AuthService:        deps.AuthService,
+		authMailer:         NewAuthMailer(deps.AuthMailerDeps),
+		AccountService:     deps.AccountService,
+		AuthSeseionService: deps.AuthSeseionService,
 	}
 	router.HandleFunc("POST /auth/login", handler.Login())
 	router.HandleFunc("POST /auth/register", handler.Register())
@@ -82,7 +87,7 @@ func (auth *AuthHandler) Login() http.HandlerFunc {
 		var token string
 
 		if !accInfo.Is2FAEnabled {
-			generatedToken, tokenErr := auth.AuthService.GenerateToken(body.Email)
+			generatedToken, _, tokenErr := auth.AuthService.GenerateToken(body.Email)
 			if tokenErr != nil {
 				auth.responsePkg.Json(&response.JsonOptions{
 					Data:   errorType.ErrorType{Error: tokenErr.Error()},
@@ -141,7 +146,7 @@ func (auth *AuthHandler) Register() http.HandlerFunc {
 			return
 		}
 
-		token, tokenErr := auth.AuthService.GenerateToken(email)
+		token, expTime, tokenErr := auth.AuthService.GenerateToken(email)
 		if tokenErr != nil {
 			auth.responsePkg.Json(&response.JsonOptions{
 				Data:   errorType.ErrorType{Error: tokenErr.Error()},
@@ -156,6 +161,14 @@ func (auth *AuthHandler) Register() http.HandlerFunc {
 			Email: email,
 			Token: token,
 		}
+
+		auth.AuthSeseionService.Update(&authsession.AddOptions{
+			Token:     token,
+			ExpiresAt: expTime,
+			IsVerify:  false,
+			IpAddress: helpers.GetClientIP(req),
+			UserAgent: req.UserAgent(),
+		})
 
 		go auth.authMailer.SendWelcomeEmail(body.Name, email, "en")
 

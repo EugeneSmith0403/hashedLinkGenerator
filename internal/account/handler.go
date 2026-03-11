@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	internalJWT "link-generator/internal/jwt"
+	authsession "link-generator/internal/auth_session"
 	"link-generator/internal/user"
 	errorType "link-generator/pkg/errorType"
 	"link-generator/pkg/middleware"
@@ -13,9 +13,9 @@ import (
 )
 
 type AccountHandlerDeps struct {
-	AccountService *AccountService
-	UserRepository *user.UserRepository
-	JWTService     *internalJWT.JWTService
+	AccountService     *AccountService
+	UserRepository     *user.UserRepository
+	AuthSessionService *authsession.AuthSessionService
 }
 
 type AccountHandler struct {
@@ -41,7 +41,7 @@ func NewAccountHandler(router *http.ServeMux, deps AccountHandlerDeps) {
 
 	// Middlewares
 	createMiddleware := middleware.Chain(
-		middleware.IsAuthed(deps.JWTService),
+		middleware.IsAuthed(*deps.AuthSessionService),
 	)
 
 	router.Handle("POST /account", createMiddleware(handler.Create()))

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"link-generator/internal/account"
-	internalJWT "link-generator/internal/jwt"
+	authsession "link-generator/internal/auth_session"
 	"link-generator/internal/payments/plan"
 	"link-generator/internal/payments/subscription"
 	stripeServices "link-generator/internal/payments/stripe/services"
@@ -20,7 +20,7 @@ import (
 
 type StripeHandlerDeps struct {
 	PaymentService      *stripeServices.PaymentService
-	JWTService          *internalJWT.JWTService
+	AuthSessionService  *authsession.AuthSessionService
 	AccountService      *account.AccountService
 	PlanRepository      *plan.PlanRepository
 	SubscriptionService *subscription.SubscriptionService
@@ -46,7 +46,7 @@ func NewStripeHandlers(router *http.ServeMux, deps StripeHandlerDeps) {
 	}
 
 	authMiddleware := middleware.Chain(
-		middleware.IsAuthed(deps.JWTService),
+		middleware.IsAuthed(*deps.AuthSessionService),
 	)
 
 	router.Handle("POST /stripe/paymentIntent", authMiddleware(handler.handlePaymentIntent()))

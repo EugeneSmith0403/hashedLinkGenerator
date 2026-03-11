@@ -38,31 +38,31 @@ func NewAuthService(deps AuthServiceDeps) *AuthService {
 	}
 }
 
-func (service *AuthService) GenerateToken(email string) (string, error) {
+func (service *AuthService) GenerateToken(email string) (string, time.Time, error) {
 	now := time.Now()
 	expiredHours, err := strconv.Atoi(service.Config.Auth.ExpiredAt)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 
-	expirationTime := now.Add(helpers.ToHours(expiredHours)).Unix()
+	expiryTime := now.Add(helpers.ToHours(expiredHours))
 
 	claims := jwt.MapClaims{
 		"email":     email,
 		"createdAt": now,
-		"exp":       expirationTime,
+		"exp":       expiryTime.Unix(),
 		"iat":       now.Unix(),
 	}
 
 	token, tokenErr := service.JWTService.GenerateToken(&claims)
 	if tokenErr != nil {
-		return "", tokenErr
+		return "", time.Time{}, tokenErr
 	}
 
 	userKey := fmt.Sprintf("token:%s", email)
-	service.RedisService.Set(userKey, true, time.Duration(expirationTime))
+	service.RedisService.Set(userKey, true, helpers.ToHours(expiredHours))
 
-	return token, nil
+	return token, expiryTime, nil
 }
 
 func (service *AuthService) Login(email, password string) bool {

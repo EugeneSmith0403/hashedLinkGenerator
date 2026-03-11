@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"link-generator/internal/account"
-	internalJWT "link-generator/internal/jwt"
+	authsession "link-generator/internal/auth_session"
 	"link-generator/internal/payments/plan"
 	errorType "link-generator/pkg/errorType"
 	"link-generator/pkg/middleware"
@@ -51,7 +51,7 @@ func toSubscriptionResponse(s *Subscription) *SubscriptionResponse {
 
 type SubscriptionHandlerDeps struct {
 	SubscriptionService *SubscriptionService
-	JWTService          *internalJWT.JWTService
+	AuthSessionService  *authsession.AuthSessionService
 	AccountService      *account.AccountService
 	PlanRepository      *plan.PlanRepository
 }
@@ -74,7 +74,7 @@ func NewSubscriptionHandlers(router *http.ServeMux, deps SubscriptionHandlerDeps
 	}
 
 	authMiddleware := middleware.Chain(
-		middleware.IsAuthed(deps.JWTService),
+		middleware.IsAuthed(*deps.AuthSessionService),
 	)
 
 	router.Handle("GET /subscriptions/me", authMiddleware(handler.handleGetCurrentSubscription()))
