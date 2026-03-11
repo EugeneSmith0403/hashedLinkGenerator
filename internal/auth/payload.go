@@ -6,15 +6,18 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	Email string `json:"email"`
-	Token string `json:"token"`
+	Is2FAEnabled bool   `json:"is2faEnabled"`
+	Email        string `json:"email"`
+	Token        string `json:"token"`
 }
 
 type RegisterRequest struct {
-	*LoginRequest
-	Name string `json:"name" validate:"required"`
+	Email    string `json:"email"`
+	Password string `json:"Password"`
+	Name     string `json:"name" validate:"required"`
 }
 
 type RegisterResponse struct {
-	*LoginResponse
+	Email string `json:"email"`
+	Token string `json:"token"`
 }

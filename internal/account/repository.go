@@ -1,8 +1,9 @@
 package account
 
 import (
-	"link-generator/pkg/db"
 	"errors"
+	"link-generator/internal/models"
+	"link-generator/pkg/db"
 
 	"gorm.io/gorm"
 )
@@ -17,7 +18,7 @@ func NewAccountRepository(db *db.Db) *AccountRepository {
 	}
 }
 
-func (r AccountRepository) Create(account *Account) (*Account, error) {
+func (r AccountRepository) Create(account *models.Account) (*models.Account, error) {
 
 	result := r.db.DB.Create(account)
 
@@ -29,8 +30,8 @@ func (r AccountRepository) Create(account *Account) (*Account, error) {
 
 }
 
-func (r *AccountRepository) FindById(id uint) (*Account, error) {
-	var account Account
+func (r *AccountRepository) FindById(id uint) (*models.Account, error) {
+	var account models.Account
 	result := r.db.DB.First(&account, "id=?", id)
 
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
@@ -45,8 +46,8 @@ func (r *AccountRepository) FindById(id uint) (*Account, error) {
 
 }
 
-func (r *AccountRepository) FindByUserId(userId uint) (*Account, error) {
-	var account Account
+func (r *AccountRepository) FindByUserId(userId uint) (*models.Account, error) {
+	var account models.Account
 	result := r.db.DB.First(&account, "user_id=?", userId)
 
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
@@ -60,7 +61,7 @@ func (r *AccountRepository) FindByUserId(userId uint) (*Account, error) {
 	return &account, nil
 }
 
-func (r *AccountRepository) Update(account *Account) (*Account, error) {
+func (r *AccountRepository) Update(account *models.Account) (*models.Account, error) {
 	result := r.db.DB.Save(account)
 	if result.Error != nil {
 		return nil, result.Error

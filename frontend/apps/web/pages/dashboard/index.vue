@@ -9,13 +9,13 @@ const { data: links, isLoading } = useQuery({
   queryFn: () => useLinksService().getAll(),
 })
 
-const { data: subscription } = useQuery({
-  queryKey: ['subscription'],
-  queryFn: () => useSubscriptionService().getCurrent(),
+const { data: me } = useQuery({
+  queryKey: ['me'],
+  queryFn: () => useUserService().getMe(),
 })
 
 const hasActiveSub = computed(() =>
-  subscription.value?.status === 'active' || subscription.value?.status === 'trialing',
+  me.value?.subscription?.status === 'active' || me.value?.subscription?.status === 'trialing',
 )
 
 const showCreateModal = ref(false)

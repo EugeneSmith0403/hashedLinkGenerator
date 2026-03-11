@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"link-generator/api"
@@ -14,10 +15,12 @@ import (
 	"link-generator/configs"
 	"link-generator/internal/account"
 	"link-generator/internal/auth"
+	authsession "link-generator/internal/auth_session"
 	"link-generator/internal/jwt"
 	"link-generator/internal/link"
 	"link-generator/internal/locales"
 	"link-generator/internal/mailer"
+	"link-generator/internal/models"
 	"link-generator/internal/payments/invoice"
 	"link-generator/internal/payments/payment"
 	"link-generator/internal/payments/plan"
@@ -51,14 +54,15 @@ type repositories struct {
 }
 
 type services struct {
-	auth         *auth.AuthService
-	jwt          *jwt.JWTService
-	stats        *stats.StatsService
-	account      *account.AccountService
+	auth        *auth.AuthService
+	jwt         *jwt.JWTService
+	stats       *stats.StatsService
+	account     *account.AccountService
 	subscription *subscription.SubscriptionService
 	payment      *stripeServices.PaymentService
 	customerAcct *stripeServices.CustomerAccountService
 	invoice      *invoice.InvoiceService
+	authSession  *authsession.AuthSessionService
 }
 
 type app struct {
@@ -99,9 +103,16 @@ func newApp(cfg *configs.Config) *app {
 		StripeClient: stripeClient,
 	})
 
+	jwtService := jwt.NewJWTService(jwt.JwtDeps{Secret: cfg.Auth.Secret, RedisSrvice: redis})
+
 	svc := &services{
-		auth: auth.NewAuthService(repos.user),
-		jwt:  jwt.NewJWTService(jwt.JwtDeps{Secret: cfg.Auth.Secret, RedisSrvice: redis}),
+		auth: auth.NewAuthService(auth.AuthServiceDeps{
+			UserRepository: repos.user,
+			Config:         cfg,
+			JWTService:     jwtService,
+			RedisService:   redis,
+		}),
+		jwt:  jwtService,
 		stats: stats.NewStatsService(&stats.StatServiceDep{
 			EventBus:        eventBus,
 			StatsRepository: repos.stats,
@@ -132,19 +143,44 @@ func newApp(cfg *configs.Config) *app {
 			PaymentRepository:      repos.payment,
 			SubscriptionRepository: repos.subscription,
 		}),
+		authSession: authsession.NewAuthSessionService(database),
 	}
 
 	return &app{cfg: cfg, db: database, repos: repos, svc: svc, redis: redis, eventBus: eventBus, rabbitMq: rabbitMq}
+}
+
+type subscriptionUserAdapter struct {
+	svc *subscription.SubscriptionService
+}
+
+func (a *subscriptionUserAdapter) GetSubscriptionByUserID(userID uint) (*models.SubscriptionInfo, error) {
+	sub, err := a.svc.GetSubscriptionByUserId(userID)
+	if err != nil {
+		return nil, err
+	}
+	if sub == nil {
+		return nil, nil
+	}
+	return &models.SubscriptionInfo{
+		ID:                 sub.ID,
+		CreatedAt:          sub.CreatedAt,
+		PlanID:             sub.PlanID,
+		Status:             string(sub.Status),
+		CurrentPeriodStart: sub.CurrentPeriodStart,
+		CurrentPeriodEnd:   sub.CurrentPeriodEnd,
+		CancelAt:           sub.CancelAt,
+		CanceledAt:         sub.CanceledAt,
+		TrialStart:         sub.TrialStart,
+		TrialEnd:           sub.TrialEnd,
+		IsPaymentIntent:    strings.HasPrefix(sub.BillingID, "pi_"),
+	}, nil
 }
 
 func (a *app) registerHandlers(router *http.ServeMux) {
 	router.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 
 	auth.NewAuthHandlers(router, auth.AuthHandlerDeps{
-		Config:      a.cfg,
 		AuthService: a.svc.auth,
-		JWTService:  a.svc.jwt,
-		RedisSrvice: a.redis,
 		AuthMailerDeps: auth.AuthMailerDeps{
 			Mailer: mailer.NewMailer(mailer.MailerDeps{
 				LocalesFS:  locales.FS,
@@ -158,49 +194,51 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 			AppName:    "Go Adv",
 			AppURL:     a.cfg.Stripe.ReturnURL,
 		},
+		AccountService:     a.svc.account,
+		AuthSeseionService: a.svc.authSession,
 	})
 	link.NewLinkHandler(router, link.LinkHandlerDeps{
 		Config:              a.cfg,
 		LinkRepository:      a.repos.link,
 		UserRepository:      a.repos.user,
-		JWTService:          a.svc.jwt,
+		AuthSessionService:  a.svc.authSession,
 		EventBus:            a.eventBus,
 		SubscriptionService: a.svc.subscription,
 	})
 	stats.NewStatsHandler(router, stats.StatsHandlerDeps{
-		Config:          a.cfg,
-		JWTService:      a.svc.jwt,
-		StatsRepository: a.repos.stats,
-		StatsService:    a.svc.stats,
-		Redis:           a.redis,
+		Config:             a.cfg,
+		AuthSessionService: a.svc.authSession,
+		StatsRepository:    a.repos.stats,
+		StatsService:       a.svc.stats,
+		Redis:              a.redis,
 	})
 	account.NewAccountHandler(router, account.AccountHandlerDeps{
-		AccountService: a.svc.account,
-		UserRepository: a.repos.user,
-		JWTService:     a.svc.jwt,
+		AccountService:     a.svc.account,
+		UserRepository:     a.repos.user,
+		AuthSessionService: a.svc.authSession,
 	})
 	payment.NewPaymentHandler(router, payment.PaymentHandlerDeps{
-		PaymentRepository: a.repos.payment,
-		JWTService:        a.svc.jwt,
-		AccountService:    a.svc.account,
+		PaymentRepository:  a.repos.payment,
+		AuthSessionService: a.svc.authSession,
+		AccountService:     a.svc.account,
 	})
 	stripe.NewStripeHandlers(router, stripe.StripeHandlerDeps{
 		PaymentService:      a.svc.payment,
-		JWTService:          a.svc.jwt,
+		AuthSessionService:  a.svc.authSession,
 		AccountService:      a.svc.account,
 		PlanRepository:      a.repos.plan,
 		SubscriptionService: a.svc.subscription,
 	})
 	subscription.NewSubscriptionHandlers(router, subscription.SubscriptionHandlerDeps{
 		SubscriptionService: a.svc.subscription,
-		JWTService:          a.svc.jwt,
+		AuthSessionService:  a.svc.authSession,
 		AccountService:      a.svc.account,
 		PlanRepository:      a.repos.plan,
 	})
 	plan.NewPlanHandler(router, plan.PlanHandlerDeps{
-		PlanRepository: a.repos.plan,
-		Redis:          a.redis,
-		JWTService:     a.svc.jwt,
+		PlanRepository:     a.repos.plan,
+		Redis:              a.redis,
+		AuthSessionService: a.svc.authSession,
 	})
 	webhook.NewWebhookHandlers(router, webhook.WebhookHandlerDeps{
 		PaymentService:         a.svc.payment,
@@ -209,6 +247,13 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 		SubscriptionService:    a.svc.subscription,
 		AccountRepository:      a.repos.account,
 		RabbitMq:               a.rabbitMq,
+	})
+	user.NewUserHandlers(router, user.UserHandlerDeps{
+		UserRepository:      a.repos.user,
+		AccountService:      a.svc.account,
+		SubscriptionService: &subscriptionUserAdapter{svc: a.svc.subscription},
+		AuthService:         a.svc.auth,
+		AuthSeseionService:  a.svc.authSession,
 	})
 
 	api.RegisterDocsRoutes(router, "api/openapi.yaml")

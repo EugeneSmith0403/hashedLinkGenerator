@@ -1,10 +1,26 @@
-package account
+package models
 
 import (
 	"time"
 
 	"gorm.io/gorm"
 )
+
+type AccountInfo struct {
+	UserID       uint
+	Is2FAEnabled bool
+	TotpSecret   string
+}
+
+type IAccountService interface {
+	GetAccountInfoByEmail(email string) (*AccountInfo, error)
+	Setup2FA(email string) (string, error)
+	Verify2Fa(code, email string) bool
+}
+
+type IAuthService interface {
+	GenerateToken(email string) (string, time.Time, error)
+}
 
 type AccountStatus string
 
@@ -31,4 +47,8 @@ type Account struct {
 	CustomerID    string          `json:"customerId"`
 	BannedBy      string          `json:"bannedBy"`
 	BannedAt      *time.Time      `json:"bannedAt"`
+	TotpSecret    string          `json:"totpSecret" gorm:"column:totp_secret"`
+	Is2FAEnabled  bool            `json:"is2faEnabled" gorm:"column:is_2fa_enabled;default:false"`
+	AuthSession   []AuthSession   `json:"authSession"`
+	User          User            `json:"user"`
 }

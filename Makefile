@@ -1,7 +1,8 @@
-.PHONY: dev server consumers consumer-payment consumer-subscription consumer-invoice frontend build docker-up docker-down migrate
+.PHONY: dev server consumers consumer-payment consumer-subscription consumer-invoice frontend build docker-up docker-down migrate stripe-webhook
 
 # Read from .env; override via CLI: make consumers WORKERS=3
 WORKERS ?= $(shell grep -E '^RABBITMQ_CONSUMERS' .env | cut -d'=' -f2 | tr -d '"' 2>/dev/null || echo 1)
+STRIPE ?= 0
 
 dev: docker-up migrate
 	@trap 'kill 0' INT TERM; \
@@ -13,6 +14,7 @@ dev: docker-up migrate
 		go run ./cmd/consumers/invoice & \
 	done; \
 	cd frontend && pnpm install && pnpm dev & \
+	if [ "$(STRIPE)" = "1" ]; then stripe listen --forward-to localhost:3000/stripe/webhook & fi; \
 	wait
 
 server:
@@ -55,6 +57,9 @@ docker-down:
 
 migrate:
 	go run ./migrations
+
+stripe-webhook:
+	stripe listen --forward-to localhost:3000/stripe/webhook
 
 build:
 	@mkdir -p bin

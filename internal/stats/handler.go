@@ -2,7 +2,7 @@ package stats
 
 import (
 	"link-generator/configs"
-	"link-generator/internal/jwt"
+	authsession "link-generator/internal/auth_session"
 	"link-generator/pkg/errorType"
 	"link-generator/pkg/middleware"
 	"link-generator/pkg/redis"
@@ -14,10 +14,10 @@ import (
 
 type StatsHandlerDeps struct {
 	*configs.Config
-	JWTService      *jwt.JWTService
-	StatsRepository *StatsRepository
-	StatsService    *StatsService
-	Redis           *redis.Redis
+	AuthSessionService *authsession.AuthSessionService
+	StatsRepository    *StatsRepository
+	StatsService       *StatsService
+	Redis              *redis.Redis
 }
 
 type StatsHandler struct {
@@ -46,7 +46,7 @@ func NewStatsHandler(router *http.ServeMux, deps StatsHandlerDeps) {
 
 	// Middlewares
 	createMiddleware := middleware.Chain(
-		middleware.IsAuthed(deps.JWTService),
+		middleware.IsAuthed(*deps.AuthSessionService),
 	)
 
 	router.Handle("GET /stats", createMiddleware(handler.getStats()))

@@ -2,7 +2,7 @@ package link
 
 import (
 	"link-generator/configs"
-	"link-generator/internal/jwt"
+	authsession "link-generator/internal/auth_session"
 	"link-generator/internal/models"
 	"link-generator/internal/user"
 	"link-generator/pkg/event"
@@ -20,7 +20,7 @@ type LinkHandlerDeps struct {
 	*configs.Config
 	LinkRepository      *LinkRepository
 	UserRepository      *user.UserRepository
-	JWTService          *jwt.JWTService
+	AuthSessionService  *authsession.AuthSessionService
 	EventBus            *event.EventBus
 	SubscriptionService middleware.SubChecker
 }
@@ -51,11 +51,23 @@ func NewLinkHandler(router *http.ServeMux, deps LinkHandlerDeps) {
 
 	// Middlewares
 	authMiddleware := middleware.Chain(
-		middleware.IsAuthed(deps.JWTService),
+		middleware.IsAuthed(*deps.AuthSessionService),
 	)
 	createMiddleware := middleware.Chain(
-		middleware.IsAuthed(deps.JWTService),
-		middleware.HasActiveSubscription(deps.UserRepository, deps.SubscriptionService),
+		middleware.IsAuthed(*deps.AuthSessionService),
+		middleware.HasActiveSubscription(
+			func(email string) (uint, error) {
+				u, err := deps.UserRepository.FindByEmail(email)
+				if err != nil {
+					return 0, err
+				}
+				if u == nil {
+					return 0, fmt.Errorf("user not found")
+				}
+				return u.ID, nil
+			},
+			deps.SubscriptionService,
+		),
 	)
 
 	router.HandleFunc("GET /{hash}", handler.GetTo())

@@ -3,10 +3,12 @@ import { useQuery } from '@tanstack/vue-query'
 
 const { t } = useI18n()
 
-const { data: subscription, isLoading } = useQuery({
-  queryKey: ['subscription'],
-  queryFn: () => useSubscriptionService().getCurrent(),
+const { data: me, isLoading } = useQuery({
+  queryKey: ['me'],
+  queryFn: () => useUserService().getMe(),
 })
+
+const subscription = computed(() => me.value?.subscription ?? null)
 
 const hasActiveSub = computed(() =>
   subscription.value?.status === 'active' || subscription.value?.status === 'trialing',

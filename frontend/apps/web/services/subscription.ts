@@ -1,7 +1,6 @@
 export interface Subscription {
   id: number
   createdAt: string
-  userId: number
   planId: number
   status: string
   currentPeriodStart: string
@@ -21,8 +20,6 @@ export function useSubscriptionService() {
   const { request } = useApiClient()
 
   return {
-    getCurrent: () => request<Subscription | null>('/subscriptions/me'),
-
     createSetupIntent: () =>
       request<SetupIntentResponse>('/subscriptions/method', { method: 'POST' }),
 

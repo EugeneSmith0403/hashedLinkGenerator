@@ -13,11 +13,16 @@ function logout() {
   router.push(localePath('/auth/login'))
 }
 
-const nav = [
-  { to: '/dashboard', icon: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1', labelKey: 'common.links' },
-  { to: '/billing', icon: 'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z', labelKey: 'common.billing' },
-  { to: '/payments', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2', labelKey: 'common.payments' },
+const allNav = [
+  { to: '/dashboard', icon: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1', labelKey: 'common.links', requiresTwoFactor: true },
+  { to: '/billing', icon: 'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z', labelKey: 'common.billing', requiresTwoFactor: true },
+  { to: '/payments', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2', labelKey: 'common.payments', requiresTwoFactor: true },
+  { to: '/account', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z', labelKey: 'common.account', requiresTwoFactor: false },
 ]
+
+const nav = computed(() =>
+  allNav.filter(item => !item.requiresTwoFactor || auth.twoFactorEnabled),
+)
 </script>
 
 <template>
@@ -41,7 +46,7 @@ const nav = [
           :key="item.to"
           :to="localePath(item.to)"
           class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-          active-class="bg-indigo-50 text-indigo-700"
+          exact-active-class="bg-indigo-50 text-indigo-700"
           inactive-class="text-gray-600 hover:bg-gray-100 hover:text-gray-900"
         >
           <svg class="h-5 w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -5,7 +5,8 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 ## Features
 
 - **URL Shortening**: Create and manage shortened links with click tracking
-- **JWT Authentication**: Secure authentication with per-request authorization
+- **Session-based Auth**: JWT tokens tied to `auth_sessions` (IP, user agent, expiry, active flag)
+- **Two-Factor Authentication**: TOTP-based 2FA with QR code setup
 - **Subscription Billing**: Stripe integration — plans, payment methods, subscriptions, refunds
 - **Payment History**: Full audit trail of all payments per user
 - **Click Statistics**: Time-range and per-link analytics
@@ -23,6 +24,7 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 - **RabbitMQ** (async event processing via `rabbitmq/amqp091-go`)
 - **Stripe Go SDK** (v84)
 - **golang-jwt/jwt**
+- **pquerna/otp** (TOTP 2FA)
 - **golang-migrate** (SQL migrations)
 - **wneessen/go-mail** (SMTP client)
 - **nicksnyder/go-i18n** (email template i18n)
@@ -49,8 +51,9 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 │   └── shared/                    # Shared consumer loop & config loader
 ├── configs/                       # Configuration loading
 ├── internal/
-│   ├── account/                   # Stripe customer account management
-│   ├── auth/                      # Registration & login
+│   ├── account/                   # Stripe customer account management + 2FA service
+│   ├── auth/                      # Registration & login handlers
+│   ├── auth_session/              # Session create/update (token, IP, user agent, is_verify)
 │   ├── consts/                    # RabbitMQ exchange/queue/routing constants
 │   ├── consumers/                 # Consumer handler logic (paymentIntent, subscription, invoice)
 │   ├── jwt/                       # JWT service
@@ -62,7 +65,7 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 │   ├── models/                    # Shared message/event models
 │   ├── publishers/                # RabbitMQ publishers (payment, subscription, invoice)
 │   ├── stats/                     # Click statistics
-│   ├── user/                      # User repository
+│   ├── user/                      # User repository + 2FA handlers
 │   └── payments/
 │       ├── invoice/               # Invoice repository & service
 │       ├── payment/               # Payment repository & handler (GET /payments)
@@ -74,14 +77,14 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 ├── pkg/
 │   ├── db/                        # Database connection
 │   ├── event/                     # In-process event bus
-│   ├── middleware/                 # CORS, auth, subscription check
+│   ├── middleware/                # CORS, auth, logging, subscription check
 │   ├── rabbitMq/                  # RabbitMQ client wrapper
 │   ├── request/                   # Body parsing helpers
 │   └── response/                  # JSON response helpers
 ├── migrations/sql/                # SQL migration files
 ├── frontend/
 │   ├── apps/web/                  # Nuxt 3 SPA
-│   │   ├── pages/                 # dashboard, billing, payments, auth
+│   │   ├── pages/                 # dashboard, billing, payments, account, auth
 │   │   ├── components/            # UI, billing, auth components
 │   │   ├── services/              # API clients (auth, account, subscription, payment)
 │   │   ├── stores/                # Pinia stores (auth)
@@ -140,11 +143,14 @@ make dev
 
 # Or step by step:
 make docker-up       # start infrastructure
+make migrate         # run database migrations
 make server          # HTTP server only (port 8081)
 make consumers       # all consumer workers
 make consumer-payment
 make consumer-subscription
 make consumer-invoice
+make frontend        # Nuxt dev server
+make stripe-webhook  # listen for Stripe webhooks (Stripe CLI)
 
 # Scale consumers (e.g. 3 workers each)
 make consumers WORKERS=3
@@ -217,7 +223,15 @@ Each consumer binary:
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | POST | `/auth/register` | No | Register → `{email, token}` |
-| POST | `/auth/login` | No | Login → `{email, token}` |
+| POST | `/auth/login` | No | Login → `{email, token, is2faEnabled}` |
+
+### User & 2FA
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/users/me` | Yes | Current user info |
+| POST | `/users/me/2fa/setup` | Yes | Generate TOTP secret → `{qrCode}` |
+| POST | `/users/2fa/verify` | No | Verify TOTP code → `{token}` |
 
 ### Account
 
@@ -240,7 +254,7 @@ Each consumer binary:
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/plans` | No | List available plans |
+| GET | `/plans` | Yes | List available plans |
 | GET | `/subscriptions/me` | Yes | Current subscription |
 | POST | `/subscriptions/method` | Yes | Create SetupIntent → `{clientSecret}` |
 | POST | `/subscriptions` | Yes | Create subscription `{planId}` |
@@ -252,6 +266,7 @@ Each consumer binary:
 |--------|------|------|-------------|
 | GET | `/payments` | Yes | List all payments for current user |
 | POST | `/stripe/paymentIntent` | Yes | Create PaymentIntent |
+| POST | `/stripe/paymentIntent/confirm` | Yes | Confirm PaymentIntent |
 | POST | `/stripe/paymentIntent/cancel` | Yes | Refund a PaymentIntent-based payment |
 | POST | `/stripe/webhook` | No | Stripe webhook handler |
 
@@ -261,6 +276,30 @@ Each consumer binary:
 |--------|------|------|-------------|
 | GET | `/stats` | Yes | Link stats `?from=&to=&linkId=` |
 | GET | `/stats/clicks` | Yes | Total clicks `?from=&to=` |
+
+## Auth Flow
+
+### Login without 2FA
+
+1. `POST /auth/login` → returns `{email, token, is2faEnabled: false}`
+2. Token is stored — user is authenticated
+
+### Login with 2FA
+
+1. `POST /auth/login` → returns `{email, is2faEnabled: true}`, token is empty
+2. Frontend prompts for TOTP code
+3. `POST /users/2fa/verify {email, code}` → returns `{token}`
+4. Token is stored — user is authenticated
+
+### 2FA Setup
+
+1. `POST /users/me/2fa/setup` (authenticated) → returns base64 QR code PNG
+2. User scans QR code with authenticator app
+3. 2FA is active at next login
+
+### Session Tracking
+
+Every login creates an `auth_sessions` record with token, expiry, IP address, user agent, and `is_verify` flag. The `IsAuthed` middleware validates the session on every protected request.
 
 ## Stripe Payment Flows
 
@@ -290,11 +329,12 @@ Each consumer binary:
 
 | Route | Description |
 |-------|-------------|
-| `/auth/login` | Login form |
+| `/auth/login` | Login form (with 2FA code step if enabled) |
 | `/auth/register` | Registration form (auto-creates account after signup) |
 | `/dashboard` | User's links list |
 | `/billing` | Plans, subscription status, cancel button |
 | `/payments` | Payment history table |
+| `/account` | Profile info and 2FA setup |
 
 ## Development Notes
 
@@ -305,18 +345,11 @@ Each consumer binary:
 - **Consumer startup** — each consumer creates its own RabbitMQ exchange/queue on init, safe to start independently
 - **Mailer** — `internal/mailer/` is a shared SMTP client; `AuthMailer` sends welcome email on registration; `InvoiceConsumer` sends payment confirmation asynchronously (goroutine) after invoice paid; if `SMTP_HOST` is empty, all sends are silently skipped
 - **Email i18n** — templates live in `internal/locales/` (embedded via `embed.FS`), translated via `go-i18n` + TOML files (EN/RU/DE)
+- **TOTP** — 30-second window, ±5 second skew tolerance, SHA1, 6-digit codes via `pquerna/otp`
 
 ## Roadmap
 
-### 1. Extended Auth — User Agent, IP, Session Table
-
-- Create `auth_sessions` table: `id`, `user_id`, `ip`, `user_agent`, `created_at`
-- Parse headers in login/register handlers
-- Expose `GET /auth/sessions` for security audit UI
-
----
-
-### 2. Columnar DB for Click Statistics
+### 1. Columnar DB for Click Statistics
 
 - Introduce **ClickHouse** or **TimescaleDB** for analytical queries
 - Publish click events with geo/device metadata
@@ -324,7 +357,7 @@ Each consumer binary:
 
 ---
 
-### 3. Rate Limiting (RPS)
+### 2. Rate Limiting (RPS)
 
 - Token-bucket limiter via Redis
 - Global IP-based + per-user quotas configurable per plan
@@ -332,7 +365,7 @@ Each consumer binary:
 
 ---
 
-### 4. Scaling & Monitoring
+### 3. Scaling & Monitoring
 
 - Horizontal scaling with stateless Go instances
 - Prometheus metrics endpoint, OpenTelemetry tracing

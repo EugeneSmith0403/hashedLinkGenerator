@@ -18,7 +18,7 @@ const statusVariant: Record<string, 'success' | 'warning' | 'danger' | 'info' | 
 }
 
 const invalidate = () => {
-  queryClient.invalidateQueries({ queryKey: ['subscription'] })
+  queryClient.invalidateQueries({ queryKey: ['me'] })
   queryClient.invalidateQueries({ queryKey: ['payments'] })
 }
 

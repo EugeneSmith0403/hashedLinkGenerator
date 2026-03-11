@@ -3,6 +3,7 @@ import type { LoginInput, RegisterInput } from '~/schemas/auth'
 export interface AuthResponse {
   email: string
   token: string
+  is2faEnabled: boolean
 }
 
 export function useAuthService() {

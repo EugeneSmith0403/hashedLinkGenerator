@@ -69,7 +69,7 @@ const { mutateAsync: confirmPaymentIntent } = useMutation({
   mutationFn: (paymentId: string) => usePaymentService().confirmPaymentIntent(paymentId),
   onSuccess: () => {
     isSuccess.value = true
-    queryClient.invalidateQueries({ queryKey: ['subscription'] })
+    queryClient.invalidateQueries({ queryKey: ['me'] })
   },
 })
 

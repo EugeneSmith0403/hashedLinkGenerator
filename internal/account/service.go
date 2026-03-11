@@ -1,14 +1,22 @@
 package account
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image/png"
+	"log"
 	"time"
 
+	"link-generator/internal/models"
 	payments "link-generator/internal/payments/models"
 	"link-generator/internal/user"
 	pkgRedis "link-generator/pkg/redis"
+
+	"github.com/pquerna/otp"
+	"github.com/pquerna/otp/totp"
 )
 
 var (
@@ -41,9 +49,9 @@ func NewAccountService(accRep AccountServiceDeps) *AccountService {
 	}
 }
 
-func (s *AccountService) GetAccountByEmail(email string) (*Account, error) {
+func (s *AccountService) GetAccountByEmail(email string) (*models.Account, error) {
 	if cached := s.redis.Get(accountCacheKey(email)); cached != "" {
-		var account Account
+		var account models.Account
 		if err := json.Unmarshal([]byte(cached), &account); err == nil {
 			return &account, nil
 		}
@@ -70,7 +78,7 @@ func (s *AccountService) GetAccountByEmail(email string) (*Account, error) {
 	return foundAccount, nil
 }
 
-func (rep *AccountService) UpdateAccount(userId uint, name, email string) (*Account, error) {
+func (rep *AccountService) UpdateAccount(userId uint, name, email string) (*models.Account, error) {
 	account, err := rep.AccountRepository.FindByUserId(userId)
 	if err != nil {
 		return nil, err
@@ -89,7 +97,7 @@ func (rep *AccountService) UpdateAccount(userId uint, name, email string) (*Acco
 	return account, nil
 }
 
-func (rep *AccountService) CreateAccount(userId uint, name, email string) (*Account, error) {
+func (rep *AccountService) CreateAccount(userId uint, name, email string) (*models.Account, error) {
 
 	existedAccount, accErr := rep.AccountRepository.FindById(userId)
 
@@ -107,10 +115,10 @@ func (rep *AccountService) CreateAccount(userId uint, name, email string) (*Acco
 		return nil, custErr
 	}
 
-	createdAccount, err := rep.AccountRepository.Create(&Account{
+	createdAccount, err := rep.AccountRepository.Create(&models.Account{
 		CustomerID:    customer.ID,
-		AccountStatus: StatusActive,
-		Provider:      ProviderStripe,
+		AccountStatus: models.StatusActive,
+		Provider:      models.ProviderStripe,
 		UserID:        userId,
 	})
 
@@ -123,7 +131,7 @@ func (rep *AccountService) CreateAccount(userId uint, name, email string) (*Acco
 	return createdAccount, nil
 }
 
-func (s *AccountService) setAccountCache(email string, account *Account) {
+func (s *AccountService) setAccountCache(email string, account *models.Account) {
 	if data, err := json.Marshal(account); err == nil {
 		s.redis.Set(accountCacheKey(email), string(data), accountCacheTTL)
 	}
@@ -131,4 +139,90 @@ func (s *AccountService) setAccountCache(email string, account *Account) {
 
 func accountCacheKey(email string) string {
 	return fmt.Sprintf("account:%s", email)
+}
+
+func (s *AccountService) GetAccountInfoByEmail(email string) (*models.AccountInfo, error) {
+	acc, err := s.GetAccountByEmail(email)
+	if err != nil {
+		return nil, err
+	}
+	return &models.AccountInfo{
+		UserID:       acc.UserID,
+		Is2FAEnabled: acc.Is2FAEnabled,
+		TotpSecret:   acc.TotpSecret,
+	}, nil
+}
+
+func (s *AccountService) Setup2FA(email string) (string, error) {
+	foundUser, err := s.UserRepository.FindByEmail(email)
+	if err != nil {
+		return "", err
+	}
+	if foundUser == nil {
+		return "", ErrUserNotFound
+	}
+
+	foundAccount, err := s.AccountRepository.FindByUserId(foundUser.Model.ID)
+	if err != nil {
+		return "", err
+	}
+	if foundAccount == nil {
+		return "", ErrAccountNotFound
+	}
+
+	key, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      "LinkShort",
+		AccountName: email,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	foundAccount.TotpSecret = key.Secret()
+	foundAccount.Is2FAEnabled = true
+	if _, err = s.AccountRepository.Update(foundAccount); err != nil {
+		return "", err
+	}
+
+	s.redis.Set(accountCacheKey(email), "", 1)
+
+	img, err := key.Image(200, 200)
+	if err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	if err = png.Encode(&buf, img); err != nil {
+		return "", err
+	}
+
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes()), nil
+}
+
+func (s *AccountService) Verify2Fa(code, email string) bool {
+	accInfo, accErr := s.GetAccountInfoByEmail(email)
+
+	if accErr != nil {
+		log.Printf("[2fa] GetAccountInfoByEmail error for %s: %v", email, accErr)
+		return false
+	}
+
+	if accInfo.TotpSecret == "" {
+		log.Printf("[2fa] TotpSecret is empty for %s — Setup2FA was not completed", email)
+		return false
+	}
+
+	now := time.Now().UTC()
+	expected, _ := totp.GenerateCode(accInfo.TotpSecret, now)
+	log.Printf("[2fa] server time=%s expected=%s got=%s", now.Format(time.RFC3339), expected, code)
+
+	isValid, _ := totp.ValidateCustom(code, accInfo.TotpSecret, now, totp.ValidateOpts{
+		Period:    30,
+		Skew:      5,
+		Digits:    otp.DigitsSix,
+		Algorithm: otp.AlgorithmSHA1,
+	})
+	log.Printf("[2fa] Verify for %s: secret_len=%d valid=%v", email, len(accInfo.TotpSecret), isValid)
+
+	return isValid
 }
