@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"link-generator/pkg/clickhouse"
 	"link-generator/pkg/db"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 
 type StatsRepository struct {
 	db *db.Db
+	ch *clickhouse.Clickhouse
 }
 
 type StatsQuery struct {
@@ -18,9 +20,10 @@ type StatsQuery struct {
 	linkID *uint
 }
 
-func NewStatsRepository(db *db.Db) *StatsRepository {
+func NewStatsRepository(db *db.Db, ch *clickhouse.Clickhouse) *StatsRepository {
 	return &StatsRepository{
-		db,
+		db: db,
+		ch: ch,
 	}
 }
 

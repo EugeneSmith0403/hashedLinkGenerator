@@ -30,6 +30,7 @@ import (
 	"link-generator/internal/payments/webhook"
 	"link-generator/internal/stats"
 	"link-generator/internal/user"
+	pkgClickhouse "link-generator/pkg/clickhouse"
 	"link-generator/pkg/db"
 	"link-generator/pkg/event"
 	"link-generator/pkg/helpers"
@@ -66,19 +67,25 @@ type services struct {
 }
 
 type app struct {
-	cfg      *configs.Config
-	db       *db.Db
-	repos    *repositories
-	svc      *services
-	redis    *pkgRedis.Redis
-	eventBus *event.EventBus
-	rabbitMq *rabbitmq.RabbitMq
+	cfg        *configs.Config
+	db         *db.Db
+	repos      *repositories
+	svc        *services
+	redis      *pkgRedis.Redis
+	eventBus   *event.EventBus
+	rabbitMq   *rabbitmq.RabbitMq
+	clickhouse *pkgClickhouse.Clickhouse
 }
 
 func newApp(cfg *configs.Config) *app {
 	database := db.NewDb(cfg)
 	eventBus := event.NewEventBus()
 	rabbitMq := rabbitmq.NewRabbitMq(cfg.RabbitMq)
+
+	ch, err := pkgClickhouse.NewCliсkhouse(&cfg.ClickHouse)
+	if err != nil {
+		log.Fatalf("clickhouse init: %v", err)
+	}
 
 	cacheMinutes, _ := strconv.Atoi(cfg.Redis.Cache)
 	redis := pkgRedis.NewRedis(&goRedis.Options{
@@ -90,7 +97,7 @@ func newApp(cfg *configs.Config) *app {
 	repos := &repositories{
 		link:         link.NewLinkRepository(database),
 		user:         user.NewUserRepository(database),
-		stats:        stats.NewStatsRepository(database),
+		stats:        stats.NewStatsRepository(database, ch),
 		payment:      payment.NewPaymentRepository(database),
 		invoice:      invoice.NewInvoiceRepository(database),
 		account:      account.NewAccountRepository(database),
@@ -146,7 +153,7 @@ func newApp(cfg *configs.Config) *app {
 		authSession: authsession.NewAuthSessionService(database),
 	}
 
-	return &app{cfg: cfg, db: database, repos: repos, svc: svc, redis: redis, eventBus: eventBus, rabbitMq: rabbitMq}
+	return &app{cfg: cfg, db: database, repos: repos, svc: svc, redis: redis, eventBus: eventBus, rabbitMq: rabbitMq, clickhouse: ch}
 }
 
 type subscriptionUserAdapter struct {
@@ -274,6 +281,7 @@ func main() {
 	defer a.redis.Close()
 	defer a.rabbitMq.Close()
 	defer a.db.Close()
+	defer a.clickhouse.Close()
 
 	router := http.NewServeMux()
 	a.registerHandlers(router)
