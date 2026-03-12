@@ -10,4 +10,7 @@ const (
 	InvoiceExchange       = "Invoice"
 	InvoiceRouting        = "Invoice.payment_succeeded"
 	InvoiceQueue          = "invoiceQueue"
+	StatsExchange         = "Stats"
+	StatsRouting          = "Stats.link_visited"
+	StatsQueue            = "statsQueue"
 )
