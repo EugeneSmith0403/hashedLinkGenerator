@@ -1,15 +1,16 @@
 package stats
 
 import (
-	"link-generator/pkg/db"
+	"context"
+	"link-generator/internal/models"
+	"link-generator/pkg/clickhouse"
 	"time"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type StatsRepository struct {
-	db *db.Db
+	ch *clickhouse.Clickhouse
 }
 
 type StatsQuery struct {
@@ -18,16 +19,23 @@ type StatsQuery struct {
 	linkID *uint
 }
 
-func NewStatsRepository(db *db.Db) *StatsRepository {
+const TableName = "link_clicks"
+
+func NewStatsRepository(ch *clickhouse.Clickhouse) *StatsRepository {
 	return &StatsRepository{
-		db,
+		ch: ch,
 	}
 }
 
-func (r *StatsRepository) GetStats(query *StatsQuery) ([]Stats, error) {
-	var stats []Stats
+func (r *StatsRepository) getTableWithContext() *gorm.DB {
+	ctx := context.Background()
+	return r.ch.DB.WithContext(ctx).Table(TableName)
+}
 
-	q := r.db.Preload("Link").Order("date asc")
+func (r *StatsRepository) GetStats(query *StatsQuery) ([]models.LinkTransition, error) {
+	var stats []models.LinkTransition
+
+	q := r.getTableWithContext()
 
 	if query.from.Unix() > 0 {
 		q = q.Where("date >= ?", query.from)
@@ -41,7 +49,9 @@ func (r *StatsRepository) GetStats(query *StatsQuery) ([]Stats, error) {
 		q = q.Where("link_id = ?", *query.linkID)
 	}
 
-	res := q.Find(&stats)
+	res := q.
+		Order("date asc").
+		Find(&stats)
 
 	if res.Error != nil {
 		return nil, res.Error
@@ -50,68 +60,29 @@ func (r *StatsRepository) GetStats(query *StatsQuery) ([]Stats, error) {
 	return stats, nil
 }
 
-func (r *StatsRepository) GetStatsGroupByDate(query *StatsQuery) ([]StatsGroupByDate, error) {
-	var stats []StatsGroupByDate
+func (r *StatsRepository) Insert(events []models.LinkTransition) error {
+	return r.getTableWithContext().CreateInBatches(events, len(events)).Error
+}
 
-	q := r.db.Model(&Stats{}).Select("date, sum(clicks) as clicks").Order("date desc")
+func (r *StatsRepository) GetStatByLink(query *StatsQuery) ([]GetStatByLink, error) {
+	var result []GetStatByLink
+
+	q := r.getTableWithContext().
+		Select("toDate(clicked_at) as date, count() as amount_clicks").
+		Where("link_id=?", query.linkID)
 
 	if query.from.Unix() > 0 && query.to.Unix() > 0 {
 		q = q.Where("date BETWEEN ? AND ?", query.from, query.to)
 	}
 
-	res := q.Group("date").Find(&stats)
+	q = q.
+		Group("toDate(clicked_at)").
+		Order("toDate(clicked_at) desc").
+		Find(&result)
 
-	if res.Error != nil {
-		return nil, res.Error
+	if q.Error != nil {
+		return nil, q.Error
 	}
 
-	return stats, nil
-}
-
-func (r *StatsRepository) GetStatById(id int) (*Stats, error) {
-	var result Stats
-
-	res := r.db.Preload("Link").Where("id=?", id).First(&result)
-
-	if res.Error != nil {
-		return nil, res.Error
-	}
-
-	return &result, nil
-}
-
-func (r *StatsRepository) UpdateLinkClicks(linkID int) (*Stats, error) {
-	today := time.Now().Truncate(24 * time.Hour)
-
-	var stats Stats
-	err := r.db.Transaction(func(tx *gorm.DB) error {
-		stats = Stats{
-			LinkID: uint(linkID),
-			Date:   today,
-			Clicks: 1,
-		}
-
-		result := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "link_id"}, {Name: "date"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{
-				"clicks": gorm.Expr("stats.clicks + 1"),
-			}),
-		}).Create(&stats)
-
-		if result.Error != nil {
-			return result.Error
-		}
-
-		if err := tx.Where("link_id = ? AND date = ?", linkID, today).First(&stats).Error; err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &stats, nil
+	return result, nil
 }

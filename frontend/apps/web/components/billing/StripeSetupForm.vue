@@ -16,6 +16,7 @@ const cardError = ref<string | null>(null)
 const isSavingCard = ref(false)
 const isSubscribing = ref(false)
 const paymentMethodReady = ref(false)
+const paymentMethodId = ref<string | null>(null)
 const globalError = ref<string | null>(null)
 
 onMounted(async () => {
@@ -52,7 +53,8 @@ const { mutateAsync: createAccount } = useMutation({
 })
 
 const { mutateAsync: createSubscription } = useMutation({
-  mutationFn: (planId: number) => useSubscriptionService().create(planId),
+  mutationFn: ({ planId, pmId }: { planId: number; pmId: string }) =>
+    useSubscriptionService().create(planId, pmId),
   onSuccess: () => queryClient.invalidateQueries({ queryKey: ['me'] }),
 })
 
@@ -75,6 +77,7 @@ async function saveCard() {
       return
     }
 
+    paymentMethodId.value = result.setupIntent.payment_method as string
     paymentMethodReady.value = true
   } catch (e: any) {
     globalError.value = e.message ?? t('billing.stripeError')
@@ -84,12 +87,12 @@ async function saveCard() {
 }
 
 async function subscribe() {
-  if (!props.planId || !paymentMethodReady.value) return
+  if (!props.planId || !paymentMethodReady.value || !paymentMethodId.value) return
   globalError.value = null
   isSubscribing.value = true
 
   try {
-    await createSubscription(props.planId)
+    await createSubscription({ planId: props.planId, pmId: paymentMethodId.value })
   } catch (e: any) {
     globalError.value = e.message ?? t('billing.stripeError')
   } finally {

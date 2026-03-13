@@ -7,7 +7,7 @@ export interface StatRecord {
 }
 
 export interface StatsByDate {
-  clicks: number
+  amountClicks: number
   date: string
 }
 
@@ -24,12 +24,12 @@ export function useStatsService() {
       return request<StatRecord[]>(`/stats${qs ? `?${qs}` : ''}`)
     },
 
-    getStatsByDate: (params?: { from?: string; to?: string }) => {
+    getStatsByDate: (linkId: number, params?: { from?: string; to?: string }) => {
       const q = new URLSearchParams()
       if (params?.from) q.set('from', params.from)
       if (params?.to) q.set('to', params.to)
       const qs = q.toString()
-      return request<StatsByDate[]>(`/stats/clicks${qs ? `?${qs}` : ''}`)
+      return request<StatsByDate[]>(`/stats/link/${linkId}${qs ? `?${qs}` : ''}`)
     },
   }
 }

@@ -9,13 +9,15 @@ import (
 )
 
 type Config struct {
-	Mode     string
-	Db       DbConfig
-	Auth     AuthConfig
-	Stripe   StripeConfig
-	Redis    Redis
-	RabbitMq RabbitMq
-	Mailer   MailerConfig
+	Mode       string
+	GeoIPPath  string
+	Db         DbConfig
+	Auth       AuthConfig
+	Stripe     StripeConfig
+	Redis      Redis
+	RabbitMq   RabbitMq
+	Mailer     MailerConfig
+	ClickHouse ClickHouseConfig
 }
 
 type MailerConfig struct {
@@ -50,6 +52,13 @@ type DbConfig struct {
 	Dsn string
 }
 
+type ClickHouseConfig struct {
+	Addr     string
+	DB       string
+	User     string
+	Password string
+}
+
 type AuthConfig struct {
 	Secret    string
 	ExpiredAt string
@@ -75,6 +84,7 @@ func LoadConfig(envFiles ...string) *Config {
 	}
 
 	return &Config{
+		GeoIPPath: os.Getenv("GEOIP_PATH"),
 		Db: DbConfig{
 			Dsn: os.Getenv("DSN"),
 		},
@@ -106,6 +116,12 @@ func LoadConfig(envFiles ...string) *Config {
 			User:     os.Getenv("SMTP_USER"),
 			Password: os.Getenv("SMTP_PASSWORD"),
 			From:     os.Getenv("SMTP_FROM"),
+		},
+		ClickHouse: ClickHouseConfig{
+			Addr:     os.Getenv("CLICKHOUSE_ADDR"),
+			DB:       os.Getenv("CLICKHOUSE_DB"),
+			User:     os.Getenv("CLICKHOUSE_USER"),
+			Password: os.Getenv("CLICKHOUSE_PASSWORD"),
 		},
 	}
 }

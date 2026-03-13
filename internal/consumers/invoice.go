@@ -38,6 +38,40 @@ type InvoiceConsumer struct {
 	appName           string
 }
 
+type paymentSuccessTranslations struct {
+	Title        string
+	Subtitle     string
+	Intro        string
+	SectionTitle string
+	LabelInvoice string
+	LabelPlan    string
+	LabelMethod  string
+	LabelDate    string
+	LabelTotal   string
+	BtnDownload  string
+	BtnView      string
+	Outro        string
+	FooterSentTo string
+	FooterRights string
+}
+
+type paymentSuccessTemplateData struct {
+	T             paymentSuccessTranslations
+	Locale        string
+	Greeting      string
+	InvoiceID     string
+	PlanName      string
+	PaymentMethod string
+	PaidAt        string
+	Amount        string
+	Currency      string
+	InvoicePDFURL string
+	InvoiceURL    string
+	CustomerEmail string
+	Year          int
+	AppName       string
+}
+
 func NewInvoiceConsumer(deps *InvoiceConsumerDeps) *InvoiceConsumer {
 	return &InvoiceConsumer{
 		invoiceSvc:        deps.InvoiceSvc,
@@ -116,40 +150,6 @@ func (c *InvoiceConsumer) handlePaymentSucceeded(inv *stripeGo.Invoice) error {
 	}()
 
 	return nil
-}
-
-type paymentSuccessTranslations struct {
-	Title        string
-	Subtitle     string
-	Intro        string
-	SectionTitle string
-	LabelInvoice string
-	LabelPlan    string
-	LabelMethod  string
-	LabelDate    string
-	LabelTotal   string
-	BtnDownload  string
-	BtnView      string
-	Outro        string
-	FooterSentTo string
-	FooterRights string
-}
-
-type paymentSuccessTemplateData struct {
-	T             paymentSuccessTranslations
-	Locale        string
-	Greeting      string
-	InvoiceID     string
-	PlanName      string
-	PaymentMethod string
-	PaidAt        string
-	Amount        string
-	Currency      string
-	InvoicePDFURL string
-	InvoiceURL    string
-	CustomerEmail string
-	Year          int
-	AppName       string
 }
 
 func (c *InvoiceConsumer) renderPaymentSuccessEmail(inv *stripeGo.Invoice, planName string) (string, error) {

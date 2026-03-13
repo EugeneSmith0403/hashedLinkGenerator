@@ -1,6 +1,9 @@
-import { VueQueryPlugin, QueryClient } from '@tanstack/vue-query'
+import type { DehydratedState } from '@tanstack/vue-query'
+import { VueQueryPlugin, QueryClient, hydrate, dehydrate } from '@tanstack/vue-query'
 
 export default defineNuxtPlugin((nuxtApp) => {
+  const vueQueryState = useState<DehydratedState | null>('vue-query', () => null)
+
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -11,4 +14,14 @@ export default defineNuxtPlugin((nuxtApp) => {
   })
 
   nuxtApp.vueApp.use(VueQueryPlugin, { queryClient })
+
+  if (import.meta.server) {
+    nuxtApp.hooks.hook('app:rendered', () => {
+      vueQueryState.value = dehydrate(queryClient)
+    })
+  }
+
+  if (import.meta.client) {
+    hydrate(queryClient, vueQueryState.value)
+  }
 })

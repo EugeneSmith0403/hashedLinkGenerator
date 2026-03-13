@@ -1,22 +1,28 @@
 package stats
 
 import (
-	"link-generator/pkg/redis"
 	"encoding/json"
 	"fmt"
+	"link-generator/pkg/redis"
 	"log"
 	"time"
 )
 
-func GetCachedStat[T any](r *redis.Redis, queries map[string]time.Time, email string) (T, error) {
+func statCacheKey(linkID uint, queries map[string]time.Time) (string, error) {
+	hashQuery, err := redis.HashFilters(queries)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("link:%d:report:%s", linkID, hashQuery), nil
+}
+
+func GetCachedStat[T any](r *redis.Redis, queries map[string]time.Time, linkID uint) (T, error) {
 	var zero T
 
-	hashQuery, err := redis.HashFilters(queries)
+	key, err := statCacheKey(linkID, queries)
 	if err != nil {
 		return zero, err
 	}
-
-	key := fmt.Sprintf("email:%sreport:%s", email, hashQuery)
 
 	statsData := r.Get(key)
 	if statsData == "" {
@@ -31,14 +37,12 @@ func GetCachedStat[T any](r *redis.Redis, queries map[string]time.Time, email st
 	return result, nil
 }
 
-func SetCachedStat[T any](r *redis.Redis, data T, queries map[string]time.Time, email string) {
-	key, err := redis.HashFilters(queries)
+func SetCachedStat[T any](r *redis.Redis, data T, queries map[string]time.Time, linkID uint) {
+	key, err := statCacheKey(linkID, queries)
 	if err != nil {
 		log.Printf("[stats] SetCachedStat hash error: %v", err)
 		return
 	}
-
-	key = fmt.Sprintf("email:%sreport:%s", email, key)
 
 	jsonData, err := json.Marshal(data)
 	if err != nil {
@@ -47,4 +51,10 @@ func SetCachedStat[T any](r *redis.Redis, data T, queries map[string]time.Time, 
 	}
 
 	r.Set(key, string(jsonData), r.ExpiredCache)
+}
+
+func InvalidateLinkCache(r *redis.Redis, linkID uint, hashQuery string) (int64, error) {
+	key := fmt.Sprintf("link:%d:report:%s", linkID, hashQuery)
+
+	return r.Del(key), nil
 }

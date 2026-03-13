@@ -1,4 +1,0 @@
-DROP TABLE IF EXISTS auth_sessions;
-DROP TABLE IF EXISTS features;
-ALTER TABLE accounts DROP COLUMN IF EXISTS role_id;
-DROP TABLE IF EXISTS roles;

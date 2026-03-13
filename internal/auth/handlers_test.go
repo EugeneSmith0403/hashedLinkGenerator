@@ -38,7 +38,8 @@ func setupAuthHandler(t *testing.T) (*auth.AuthHandler, sqlmock.Sqlmock, func())
 
 	config := &configs.Config{
 		Auth: configs.AuthConfig{
-			Secret: "test-secret-key",
+			Secret:    "test-secret-key",
+			ExpiredAt: "24",
 		},
 	}
 
@@ -46,9 +47,13 @@ func setupAuthHandler(t *testing.T) (*auth.AuthHandler, sqlmock.Sqlmock, func())
 		Secret: config.Auth.Secret,
 	})
 
-	authService := auth.NewAuthService(userRepo)
+	authService := auth.NewAuthService(auth.AuthServiceDeps{
+		UserRepository: userRepo,
+		Config:         config,
+		JWTService:     jwtService,
+	})
 
-	authHandler := auth.NewAuthHandlerForTest(config, authService, jwtService)
+	authHandler := auth.NewAuthHandlerForTest(authService)
 
 	cleanup := func() {
 		database.Close()

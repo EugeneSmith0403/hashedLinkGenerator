@@ -52,7 +52,6 @@ func (c *PaymentIntentConsumer) Handle(body []byte) error {
 
 func (c *PaymentIntentConsumer) handleSucceeded(pi *stripeGo.PaymentIntent) error {
 	if _, ok := pi.Metadata["payment_id"]; !ok {
-		// subscription-generated PI — handled by invoice.payment_succeeded
 		return nil
 	}
 
