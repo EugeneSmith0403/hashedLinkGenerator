@@ -47,7 +47,7 @@ func (s *SubscriptionService) AddPaymentMethod(customerID string) (*stripeGo.Set
 	})
 }
 
-func (s *SubscriptionService) CreateSubscription(userID, planID uint, customedId, price string) (*stripeGo.Subscription, error) {
+func (s *SubscriptionService) CreateSubscription(userID, planID uint, customedId, price, paymentMethodId string) (*stripeGo.Subscription, error) {
 	p, err := s.planRepository.GetByID(planID)
 	if err != nil {
 		return nil, fmt.Errorf("get plan: %w", err)
@@ -57,7 +57,8 @@ func (s *SubscriptionService) CreateSubscription(userID, planID uint, customedId
 	}
 
 	sub, err := s.stripeProvider.V1Subscriptions.Create(s.ctx, &stripeGo.SubscriptionCreateParams{
-		Customer: stripe.String(customedId),
+		Customer:             stripe.String(customedId),
+		DefaultPaymentMethod: stripe.String(paymentMethodId),
 		Items: []*stripeGo.SubscriptionCreateItemParams{
 			{
 				Price: stripe.String(price),

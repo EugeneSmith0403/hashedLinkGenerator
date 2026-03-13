@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	Mode       string
+	GeoIPPath  string
 	Db         DbConfig
 	Auth       AuthConfig
 	Stripe     StripeConfig
@@ -83,6 +84,7 @@ func LoadConfig(envFiles ...string) *Config {
 	}
 
 	return &Config{
+		GeoIPPath: os.Getenv("GEOIP_PATH"),
 		Db: DbConfig{
 			Dsn: os.Getenv("DSN"),
 		},

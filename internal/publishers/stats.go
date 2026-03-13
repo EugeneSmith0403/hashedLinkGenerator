@@ -47,8 +47,8 @@ func (p StatsPublisher) CreateExchangeAndQueue() {
 	}
 }
 
-func (p StatsPublisher) PublishToQueue(eventType models.StatsEventType, data models.StatsData) error {
-	log.Printf("[stats] %s: linkHash=%s userId=%d\n", eventType, data.LinkHash, data.UserID)
+func (p StatsPublisher) PublishToQueue(eventType models.StatsEventType, data models.LinkTransition) error {
+	log.Printf("[stats] %s: LinkID=%s ClickedAt=%d\n", eventType, data.LinkID, data.ClickedAt)
 
 	body, err := json.Marshal(models.StatsMessage{
 		EventType: eventType,

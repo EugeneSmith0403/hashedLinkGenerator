@@ -31,6 +31,7 @@ import (
 	"link-generator/internal/stats"
 	"link-generator/internal/user"
 	pkgClickhouse "link-generator/pkg/clickhouse"
+	"github.com/oschwald/geoip2-golang"
 	"link-generator/pkg/db"
 	"link-generator/pkg/event"
 	"link-generator/pkg/helpers"
@@ -55,10 +56,10 @@ type repositories struct {
 }
 
 type services struct {
-	auth        *auth.AuthService
-	jwt         *jwt.JWTService
-	stats       *stats.StatsService
-	account     *account.AccountService
+	auth         *auth.AuthService
+	jwt          *jwt.JWTService
+	stats        *stats.StatsService
+	account      *account.AccountService
 	subscription *subscription.SubscriptionService
 	payment      *stripeServices.PaymentService
 	customerAcct *stripeServices.CustomerAccountService
@@ -75,6 +76,18 @@ type app struct {
 	eventBus   *event.EventBus
 	rabbitMq   *rabbitmq.RabbitMq
 	clickhouse *pkgClickhouse.Clickhouse
+	geoIP      *geoip2.Reader
+}
+
+type subscriptionUserAdapter struct {
+	svc *subscription.SubscriptionService
+}
+
+func newTestHandler(cfg *configs.Config) http.Handler {
+	a := newApp(cfg)
+	router := http.NewServeMux()
+	a.registerHandlers(router)
+	return middleware.Chain(middleware.Cors, middleware.Logging)(router)
 }
 
 func newApp(cfg *configs.Config) *app {
@@ -87,6 +100,14 @@ func newApp(cfg *configs.Config) *app {
 		log.Fatalf("clickhouse init: %v", err)
 	}
 
+	var geoIPReader *geoip2.Reader
+	if cfg.GeoIPPath != "" {
+		geoIPReader, err = geoip2.Open(cfg.GeoIPPath)
+		if err != nil {
+			log.Printf("geoip init: %v (country lookup disabled)", err)
+		}
+	}
+
 	cacheMinutes, _ := strconv.Atoi(cfg.Redis.Cache)
 	redis := pkgRedis.NewRedis(&goRedis.Options{
 		Addr:     cfg.Redis.Addr,
@@ -97,7 +118,7 @@ func newApp(cfg *configs.Config) *app {
 	repos := &repositories{
 		link:         link.NewLinkRepository(database),
 		user:         user.NewUserRepository(database),
-		stats:        stats.NewStatsRepository(database, ch),
+		stats:        stats.NewStatsRepository(ch),
 		payment:      payment.NewPaymentRepository(database),
 		invoice:      invoice.NewInvoiceRepository(database),
 		account:      account.NewAccountRepository(database),
@@ -119,10 +140,11 @@ func newApp(cfg *configs.Config) *app {
 			JWTService:     jwtService,
 			RedisService:   redis,
 		}),
-		jwt:  jwtService,
+		jwt: jwtService,
 		stats: stats.NewStatsService(&stats.StatServiceDep{
 			EventBus:        eventBus,
 			StatsRepository: repos.stats,
+			GeoIP:           geoIPReader,
 		}),
 		account: account.NewAccountService(account.AccountServiceDeps{
 			AccountRepository: repos.account,
@@ -153,11 +175,7 @@ func newApp(cfg *configs.Config) *app {
 		authSession: authsession.NewAuthSessionService(database),
 	}
 
-	return &app{cfg: cfg, db: database, repos: repos, svc: svc, redis: redis, eventBus: eventBus, rabbitMq: rabbitMq, clickhouse: ch}
-}
-
-type subscriptionUserAdapter struct {
-	svc *subscription.SubscriptionService
+	return &app{cfg: cfg, db: database, repos: repos, svc: svc, redis: redis, eventBus: eventBus, rabbitMq: rabbitMq, clickhouse: ch, geoIP: geoIPReader}
 }
 
 func (a *subscriptionUserAdapter) GetSubscriptionByUserID(userID uint) (*models.SubscriptionInfo, error) {
@@ -211,6 +229,8 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 		AuthSessionService:  a.svc.authSession,
 		EventBus:            a.eventBus,
 		SubscriptionService: a.svc.subscription,
+		RabbitMq:            a.rabbitMq,
+		StatsService:        a.svc.stats,
 	})
 	stats.NewStatsHandler(router, stats.StatsHandlerDeps{
 		Config:             a.cfg,
@@ -266,14 +286,6 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 	api.RegisterDocsRoutes(router, "api/openapi.yaml")
 }
 
-func App(cfg *configs.Config) http.Handler {
-	a := newApp(cfg)
-	router := http.NewServeMux()
-	a.registerHandlers(router)
-	go a.svc.stats.AddClick()
-	return middleware.Chain(middleware.Cors, middleware.Logging)(router)
-}
-
 func main() {
 	configs := shared.LoadConfigs()
 
@@ -282,10 +294,12 @@ func main() {
 	defer a.rabbitMq.Close()
 	defer a.db.Close()
 	defer a.clickhouse.Close()
+	if a.geoIP != nil {
+		defer a.geoIP.Close()
+	}
 
 	router := http.NewServeMux()
 	a.registerHandlers(router)
-	go a.svc.stats.AddClick()
 	handler := middleware.Chain(middleware.Cors, middleware.Logging)(router)
 
 	server := manners.NewWithServer(&http.Server{

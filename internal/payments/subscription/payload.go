@@ -5,5 +5,6 @@ type SetupIntentResponse struct {
 }
 
 type CreateSubscriptionPayload struct {
-	PlanId uint `json:"planId" validate:"required"`
+	PlanId          uint   `json:"planId" validate:"required"`
+	PaymentMethodId string `json:"paymentMethodId" validate:"required"`
 }

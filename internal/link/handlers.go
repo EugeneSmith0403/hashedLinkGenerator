@@ -1,15 +1,18 @@
 package link
 
 import (
+	"fmt"
 	"link-generator/configs"
 	authsession "link-generator/internal/auth_session"
 	"link-generator/internal/models"
+	"link-generator/internal/publishers"
+	"link-generator/internal/stats"
 	"link-generator/internal/user"
 	"link-generator/pkg/event"
 	"link-generator/pkg/middleware"
+	rabbitmq "link-generator/pkg/rabbitMq"
 	"link-generator/pkg/request"
 	"link-generator/pkg/response"
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -23,6 +26,8 @@ type LinkHandlerDeps struct {
 	AuthSessionService  *authsession.AuthSessionService
 	EventBus            *event.EventBus
 	SubscriptionService middleware.SubChecker
+	RabbitMq            *rabbitmq.RabbitMq
+	StatsService        *stats.StatsService
 }
 
 type LinkHandler struct {
@@ -31,12 +36,17 @@ type LinkHandler struct {
 	LinkRepository *LinkRepository
 	UserRepository *user.UserRepository
 	EventBus       *event.EventBus
+	StatsPublisher *publishers.StatsPublisher
+	StatsService   *stats.StatsService
 }
 
 func NewLinkHandler(router *http.ServeMux, deps LinkHandlerDeps) {
 	headersMap := map[string]string{
 		"Content-Type": "application/json",
 	}
+
+	statsPub := publishers.NewStatsPublisher(deps.RabbitMq)
+	statsPub.CreateExchangeAndQueue()
 
 	options := &response.ResponseOptions{
 		HeadersMap: headersMap,
@@ -47,6 +57,8 @@ func NewLinkHandler(router *http.ServeMux, deps LinkHandlerDeps) {
 		LinkRepository: deps.LinkRepository,
 		UserRepository: deps.UserRepository,
 		EventBus:       deps.EventBus,
+		StatsPublisher: statsPub,
+		StatsService:   deps.StatsService,
 	}
 
 	// Middlewares
@@ -238,9 +250,32 @@ func (link *LinkHandler) GetTo() http.HandlerFunc {
 			return
 		}
 
-		go link.EventBus.Publish(event.Event{
-			Type: event.LinkVisitedEVent,
-			Data: int(result.Model.ID),
+		clientContext := link.StatsService.BuildClientContext(req)
+
+		go link.StatsPublisher.PublishToQueue(models.StatsLinkVisited, models.LinkTransition{
+			LinkID:    int64(result.ID),
+			ClickedAt: clientContext.Timestamp,
+
+			IP:           clientContext.IP,
+			ForwardedFor: clientContext.ForwardedFor,
+			RealIP:       clientContext.RealIP,
+			RemoteAddr:   clientContext.RemoteAddr,
+			RemotePort:   clientContext.RemotePort,
+			Country:      clientContext.Country,
+
+			UserAgent:      clientContext.UserAgent,
+			Accept:         clientContext.Accept,
+			AcceptLanguage: clientContext.AcceptLanguage,
+			AcceptEncoding: clientContext.AcceptEncoding,
+			Origin:         clientContext.Origin,
+			Referer:        clientContext.Referer,
+
+			Fingerprint:    clientContext.Fingerprint,
+			RequestID:      clientContext.RequestID,
+			ForwardedProto: clientContext.ForwardedProto,
+			ForwardedHost:  clientContext.ForwardedHost,
+			ForwardedPort:  clientContext.ForwardedPort,
+			Scheme:         clientContext.Scheme,
 		})
 
 		http.Redirect(w, req, result.Url, http.StatusTemporaryRedirect)

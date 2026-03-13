@@ -61,7 +61,7 @@ func removeData(db *gorm.DB) {
 func request(requestData *auth.LoginRequest, t *testing.T) *http.Response {
 	config := loadTestConfig()
 	// Init
-	ts := httptest.NewServer(App(config))
+	ts := httptest.NewServer(newTestHandler(config))
 
 	defer ts.Close()
 

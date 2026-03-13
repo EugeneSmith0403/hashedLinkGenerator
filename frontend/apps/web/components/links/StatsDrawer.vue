@@ -9,7 +9,7 @@ const { t } = useI18n()
 
 const { data: stats, isLoading, refetch } = useQuery({
   queryKey: computed(() => ['stats', props.link?.ID]),
-  queryFn: () => useStatsService().getStats({ linkId: props.link!.ID }),
+  queryFn: () => useStatsService().getStatsByDate(props.link!.ID),
   enabled: computed(() => !!props.link && props.open),
 })
 
@@ -18,7 +18,7 @@ watch(() => props.open, (val) => {
 })
 
 const totalClicks = computed(() =>
-  stats.value?.reduce((sum, s) => sum + s.clicks, 0) ?? 0,
+  stats.value?.reduce((sum, s) => sum + s.amountClicks, 0) ?? 0,
 )
 
 const config = useRuntimeConfig()
@@ -81,7 +81,7 @@ function shortUrl(hash: string) {
               class="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50"
             >
               <span class="text-sm text-gray-600">{{ new Date(stat.date).toLocaleDateString() }}</span>
-              <UiBadge variant="info">{{ stat.clicks }} {{ t('dashboard.clicks') }}</UiBadge>
+              <UiBadge variant="info">{{ stat.amountClicks }} {{ t('dashboard.clicks') }}</UiBadge>
             </div>
           </div>
         </div>

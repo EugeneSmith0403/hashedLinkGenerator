@@ -273,6 +273,7 @@ func (h *SubscriptionHandler) handleCreateSubscription() http.HandlerFunc {
 			curPlan.ID,
 			foundAccount.CustomerID,
 			curPlan.StripePriceID,
+			body.PaymentMethodId,
 		)
 		if subErr != nil {
 			code := http.StatusInternalServerError

@@ -2,47 +2,43 @@ package stats
 
 import (
 	"link-generator/pkg/event"
-	"log"
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/oschwald/geoip2-golang"
 )
 
 type StatServiceDep struct {
 	EventBus        *event.EventBus
 	StatsRepository *StatsRepository
+	GeoIP           *geoip2.Reader
 }
 
 type StatsService struct {
 	EventBus        *event.EventBus
 	StatsRepository *StatsRepository
+	geoIP           *geoip2.Reader
 }
 
 func NewStatsService(deps *StatServiceDep) *StatsService {
 	return &StatsService{
 		EventBus:        deps.EventBus,
 		StatsRepository: deps.StatsRepository,
-	}
-}
-
-func (s *StatsService) AddClick() {
-	for msg := range s.EventBus.Subscribe() {
-		if msg.Type == event.LinkVisitedEVent {
-			data, ok := msg.Data.(int)
-
-			if !ok {
-				log.Fatalln("Bad LinkVisitedEVent data:", msg.Data)
-				continue
-			}
-			s.StatsRepository.UpdateLinkClicks(data)
-		}
-
+		geoIP:           deps.GeoIP,
 	}
 }
 
 func (s *StatsService) BuildClientContext(r *http.Request) ClientContext {
-
 	ip, port, _ := net.SplitHostPort(r.RemoteAddr)
+
+	requestID := r.Header.Get("X-Request-ID")
+	if requestID == "" {
+		requestID = uuid.New().String()
+	}
+
+	country := s.lookupCountry(ip)
 
 	ctx := ClientContext{
 		IP:           ip,
@@ -50,6 +46,7 @@ func (s *StatsService) BuildClientContext(r *http.Request) ClientContext {
 		RemoteAddr:   r.RemoteAddr,
 		ForwardedFor: r.Header.Get("X-Forwarded-For"),
 		RealIP:       r.Header.Get("X-Real-IP"),
+		Country:      country,
 
 		UserAgent:      r.UserAgent(),
 		Accept:         r.Header.Get("Accept"),
@@ -62,6 +59,7 @@ func (s *StatsService) BuildClientContext(r *http.Request) ClientContext {
 		ForwardedHost:  r.Header.Get("X-Forwarded-Host"),
 		ForwardedPort:  r.Header.Get("X-Forwarded-Port"),
 
+		RequestID: requestID,
 		Timestamp: time.Now(),
 	}
 
@@ -72,4 +70,19 @@ func (s *StatsService) BuildClientContext(r *http.Request) ClientContext {
 	}
 
 	return ctx
+}
+
+func (s *StatsService) lookupCountry(ip string) string {
+	if s.geoIP == nil {
+		return ""
+	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return ""
+	}
+	record, err := s.geoIP.Country(parsed)
+	if err != nil {
+		return ""
+	}
+	return record.Country.IsoCode
 }

@@ -23,8 +23,8 @@ export function useSubscriptionService() {
     createSetupIntent: () =>
       request<SetupIntentResponse>('/subscriptions/method', { method: 'POST' }),
 
-    create: (planId: number) =>
-      request<Subscription>('/subscriptions', { method: 'POST', body: JSON.stringify({ planId }) }),
+    create: (planId: number, paymentMethodId: string) =>
+      request<Subscription>('/subscriptions', { method: 'POST', body: JSON.stringify({ planId, paymentMethodId }) }),
 
     cancel: () =>
       request<Subscription>('/subscriptions/cancel', { method: 'PATCH' }),

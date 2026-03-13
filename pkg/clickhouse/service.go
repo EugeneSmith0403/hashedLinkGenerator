@@ -1,46 +1,31 @@
 package clickhouse
 
 import (
-	"context"
 	"fmt"
 	"link-generator/configs"
 
-	"github.com/ClickHouse/clickhouse-go/v2"
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	gormClickhouse "gorm.io/driver/clickhouse"
+	"gorm.io/gorm"
 )
 
 type Clickhouse struct {
-	client driver.Conn
-	ctx    context.Context
+	DB *gorm.DB
 }
 
 func NewCliсkhouse(cfg *configs.ClickHouseConfig) (*Clickhouse, error) {
-	ctx := context.Background()
-	conn, err := clickhouse.Open(&clickhouse.Options{
-		Addr: []string{cfg.Addr},
-		Auth: clickhouse.Auth{
-			Database: cfg.DB,
-			Username: cfg.User,
-			Password: cfg.Password,
-		},
-	})
+	dsn := fmt.Sprintf("clickhouse://%s:%s@%s/%s", cfg.User, cfg.Password, cfg.Addr, cfg.DB)
+
+	db, err := gorm.Open(gormClickhouse.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse open: %w", err)
 	}
 
-	return &Clickhouse{client: conn, ctx: ctx}, nil
+	return &Clickhouse{DB: db}, nil
 }
 
-func (c Clickhouse) Exec(sql string) error {
-	err := c.client.Exec(c.ctx, sql)
-
-	if err != nil {
-		return err
+func (db Clickhouse) Close() {
+	ch, err := db.DB.DB()
+	if err == nil {
+		ch.Close()
 	}
-
-	return nil
-}
-
-func (c Clickhouse) Close() error {
-	return c.client.Close()
 }

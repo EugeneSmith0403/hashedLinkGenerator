@@ -21,6 +21,11 @@ type StatsGroupByDate struct {
 	Date   time.Time `json:"date" gorm:"index:idx_stats_date,unique;type:date"`
 }
 
+type GetStatByLink struct {
+	Date          time.Time `json:"date"          gorm:"column:date"`
+	AmountClicks  uint64    `json:"amountClicks"  gorm:"column:amount_clicks"`
+}
+
 type ClientContext struct {
 	// Network
 	IP           string
