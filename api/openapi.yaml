@@ -145,27 +145,69 @@ components:
         failureMessage:
           type: string
 
-    Stats:
+    LinkClick:
       type: object
+      description: Raw click event row from ClickHouse link_clicks table
       properties:
-        id:
+        LinkID:
           type: integer
-        linkId:
-          type: integer
-        clicks:
-          type: integer
-        date:
+          format: int64
+        ClickedAt:
           type: string
-          format: date
+          format: date-time
+        IP:
+          type: string
+        ForwardedFor:
+          type: string
+        RealIP:
+          type: string
+        RemoteAddr:
+          type: string
+        RemotePort:
+          type: string
+        Country:
+          type: string
+        UserAgent:
+          type: string
+        Accept:
+          type: string
+        AcceptLanguage:
+          type: string
+        AcceptEncoding:
+          type: string
+        Origin:
+          type: string
+        Referer:
+          type: string
+        DeviceType:
+          type: string
+        OS:
+          type: string
+        Browser:
+          type: string
+        Fingerprint:
+          type: string
+        RequestID:
+          type: string
+        ForwardedProto:
+          type: string
+        ForwardedHost:
+          type: string
+        ForwardedPort:
+          type: string
+        Scheme:
+          type: string
 
-    StatsGroupByDate:
+    GetStatByLink:
       type: object
+      description: Clicks grouped by date for a specific link
       properties:
-        clicks:
-          type: integer
         date:
           type: string
           format: date
+        amountClicks:
+          type: integer
+          format: int64
 
 paths:
   # ── Auth ────────────────────────────────────────────────────────────────────
@@ -515,7 +557,7 @@ paths:
   /stats:
     get:
       operationId: GetStats
-      summary: Get link stats
+      summary: Raw click events from ClickHouse, optionally filtered by date range and link
       tags: [stats]
       security:
         - bearerAuth: []
@@ -542,18 +584,23 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Stats"
+                  $ref: "#/components/schemas/LinkClick"
         "401":
           description: Unauthorized
 
-  /stats/clicks:
+  /stats/link/{id}:
     get:
-      operationId: GetClickStats
-      summary: Get click stats grouped by date
+      operationId: GetStatByLink
+      summary: Clicks grouped by date for a specific link
       tags: [stats]
       security:
         - bearerAuth: []
       parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
         - name: from
           in: query
           schema:
@@ -572,7 +619,9 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/StatsGroupByDate"
+                  $ref: "#/components/schemas/GetStatByLink"
+        "400":
+          description: linkId must be a number
         "401":
           description: Unauthorized
 

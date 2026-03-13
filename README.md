@@ -12,7 +12,7 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 - **Click Statistics**: Time-range and per-link analytics stored in ClickHouse
 - **Async Event Processing**: RabbitMQ consumers for payment intents, subscriptions, invoices, and click stats
 - **Transactional Email**: SMTP mailer — welcome email on registration, payment confirmation on invoice paid
-- **Redis Caching**: Stats cache with automatic invalidation on new click events
+- **Redis Caching**: Grouped stats cached per `(linkID, date-range)` with targeted key invalidation on new click events
 - **GeoIP Country Detection**: MaxMind GeoIP2 lookup for click country metadata
 - **Internationalization**: EN / RU / DE (frontend + email templates)
 
@@ -22,7 +22,7 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 - **Go** (net/http ServeMux)
 - **PostgreSQL** with GORM
 - **ClickHouse** (click analytics — `link_clicks` table, GORM driver)
-- **Redis** (stats caching with pattern-based invalidation)
+- **Redis** (stats caching with targeted key invalidation)
 - **RabbitMQ** (async event processing via `rabbitmq/amqp091-go`)
 - **Stripe Go SDK** (v84)
 - **golang-jwt/jwt**
@@ -271,7 +271,7 @@ Each `link_clicks` row captures:
 
 The `country` field is populated via MaxMind GeoLite2 if `GEOIP_PATH` is configured.
 
-Stats are cached in Redis per `(email, linkID, date-range)`. The cache is invalidated by pattern `*:link:{id}:*` whenever new clicks are inserted.
+Grouped stats (`GET /stats/link/{id}`) are cached in Redis. Cache key format: `link:{id}:report:{md5}` where the MD5 is derived from the `from`/`to` date-range filter params. On each new click the stats consumer performs a targeted `DEL link:{id}:report:{filterHash}` using the `FilterHash` carried in the event message, replacing the old pattern-based scan.
 
 ## API Endpoints
 
@@ -404,7 +404,25 @@ Every login creates an `auth_sessions` record with token, expiry, IP address, us
 - **Email i18n** — templates live in `internal/locales/` (embedded via `embed.FS`), translated via `go-i18n` + TOML files (EN/RU/DE)
 - **TOTP** — 30-second window, ±5 second skew tolerance, SHA1, 6-digit codes via `pquerna/otp`
 - **ClickHouse table** — `link_clicks` uses `ReplacingMergeTree`, partitioned by month, ordered by `(link_id, clicked_at, request_id)`; deduplication is eventual
-- **Stats cache invalidation** — when the stats consumer inserts into ClickHouse, it calls `redis.DelByPattern("*:link:{id}:*")` to clear all cached reports for that link
+- **Stats cache invalidation** — when the stats consumer inserts into ClickHouse, it calls `redis.Del("link:{id}:report:{filterHash}")` to remove the specific cached report for that link; the `FilterHash` is embedded in the `StatsMessage` payload at redirect time so no pattern scan is needed
+
+## Roadmap
+
+### 1. Rate Limiting (RPS)
+
+- Token-bucket limiter via Redis
+- Global IP-based + per-user quotas configurable per plan
+- `429 Too Many Requests` with `Retry-After`
+
+---
+
+### 2. Scaling & Monitoring
+
+- Horizontal scaling with stateless Go instances
+- Prometheus metrics endpoint, OpenTelemetry tracing
+- Grafana dashboards — latency, queue depth, payment success rate
+
+---
 
 ## License
 
