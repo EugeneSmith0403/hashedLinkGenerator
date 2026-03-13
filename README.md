@@ -9,10 +9,11 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 - **Two-Factor Authentication**: TOTP-based 2FA with QR code setup
 - **Subscription Billing**: Stripe integration — plans, payment methods, subscriptions, refunds
 - **Payment History**: Full audit trail of all payments per user
-- **Click Statistics**: Time-range and per-link analytics
-- **Async Event Processing**: RabbitMQ consumers for payment intents, subscriptions, and invoices
+- **Click Statistics**: Time-range and per-link analytics stored in ClickHouse
+- **Async Event Processing**: RabbitMQ consumers for payment intents, subscriptions, invoices, and click stats
 - **Transactional Email**: SMTP mailer — welcome email on registration, payment confirmation on invoice paid
-- **Redis Caching**: Stats cache for performance
+- **Redis Caching**: Stats cache with automatic invalidation on new click events
+- **GeoIP Country Detection**: MaxMind GeoIP2 lookup for click country metadata
 - **Internationalization**: EN / RU / DE (frontend + email templates)
 
 ## Tech Stack
@@ -20,14 +21,16 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 ### Backend
 - **Go** (net/http ServeMux)
 - **PostgreSQL** with GORM
-- **Redis** (stats caching)
+- **ClickHouse** (click analytics — `link_clicks` table, GORM driver)
+- **Redis** (stats caching with pattern-based invalidation)
 - **RabbitMQ** (async event processing via `rabbitmq/amqp091-go`)
 - **Stripe Go SDK** (v84)
 - **golang-jwt/jwt**
 - **pquerna/otp** (TOTP 2FA)
-- **golang-migrate** (SQL migrations)
+- **golang-migrate** (SQL migrations for both PostgreSQL and ClickHouse)
 - **wneessen/go-mail** (SMTP client)
 - **nicksnyder/go-i18n** (email template i18n)
+- **oschwald/geoip2-golang** (MaxMind GeoIP2 country lookup)
 
 ### Frontend
 - **Nuxt 3** (Vue 3, TypeScript)
@@ -47,7 +50,8 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 │   ├── consumers/
 │   │   ├── paymentIntent/         # PaymentIntent event consumer
 │   │   ├── subscription/          # Subscription event consumer
-│   │   └── invoice/               # Invoice event consumer
+│   │   ├── invoice/               # Invoice event consumer
+│   │   └── stats/                 # Click stats consumer (writes to ClickHouse, invalidates Redis cache)
 │   └── shared/                    # Shared consumer loop & config loader
 ├── configs/                       # Configuration loading
 ├── internal/
@@ -55,16 +59,16 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 │   ├── auth/                      # Registration & login handlers
 │   ├── auth_session/              # Session create/update (token, IP, user agent, is_verify)
 │   ├── consts/                    # RabbitMQ exchange/queue/routing constants
-│   ├── consumers/                 # Consumer handler logic (paymentIntent, subscription, invoice)
+│   ├── consumers/                 # Consumer handler logic (paymentIntent, subscription, invoice, stats)
 │   ├── jwt/                       # JWT service
 │   ├── locales/                   # Embedded email templates & i18n strings (EN/RU/DE)
 │   │   ├── auth/register/         # Welcome email (welcome.html + *.toml)
 │   │   └── invoice/succeed/       # Payment success email (payment_success.html + *.toml)
 │   ├── mailer/                    # SMTP mailer service (go-mail + go-i18n)
-│   ├── link/                      # Link CRUD + redirect
+│   ├── link/                      # Link CRUD + redirect + stats publishing
 │   ├── models/                    # Shared message/event models
-│   ├── publishers/                # RabbitMQ publishers (payment, subscription, invoice)
-│   ├── stats/                     # Click statistics
+│   ├── publishers/                # RabbitMQ publishers (payment, subscription, invoice, stats)
+│   ├── stats/                     # Click statistics (ClickHouse repo, handler, service, cache)
 │   ├── user/                      # User repository + 2FA handlers
 │   └── payments/
 │       ├── invoice/               # Invoice repository & service
@@ -75,18 +79,23 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 │       ├── subscription/          # Subscription service, handlers
 │       └── webhook/               # Stripe webhook handler & service
 ├── pkg/
-│   ├── db/                        # Database connection
+│   ├── clickhouse/                # ClickHouse connection wrapper
+│   ├── db/                        # PostgreSQL connection
 │   ├── event/                     # In-process event bus
 │   ├── middleware/                # CORS, auth, logging, subscription check
 │   ├── rabbitMq/                  # RabbitMQ client wrapper
+│   ├── redis/                     # Redis client wrapper (Get/Set/Incr/SAdd/DelByPattern)
 │   ├── request/                   # Body parsing helpers
 │   └── response/                  # JSON response helpers
-├── migrations/sql/                # SQL migration files
+├── migrations/
+│   ├── postgres/                  # PostgreSQL migration files
+│   ├── clickhouse/                # ClickHouse migration files
+│   └── auto.go                    # Migration runner (supports --target postgres|clickhouse|all)
 ├── frontend/
 │   ├── apps/web/                  # Nuxt 3 SPA
 │   │   ├── pages/                 # dashboard, billing, payments, account, auth
-│   │   ├── components/            # UI, billing, auth components
-│   │   ├── services/              # API clients (auth, account, subscription, payment)
+│   │   ├── components/            # UI, billing, auth, links components
+│   │   ├── services/              # API clients (auth, account, subscription, payment, stats)
 │   │   ├── stores/                # Pinia stores (auth)
 │   │   ├── schemas/               # Zod validation schemas
 │   │   └── i18n/locales/          # en.json, ru.json, de.json
@@ -102,13 +111,15 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 
 ### Prerequisites
 
-- Go 1.21+
+- Go 1.22+
 - PostgreSQL
+- ClickHouse
 - Redis
 - RabbitMQ
 - Node.js 20+ and pnpm
 - Docker & Docker Compose
 - Stripe account (test keys)
+- MaxMind GeoLite2 Country `.mmdb` file (optional, for country detection)
 
 ### Environment Variables
 
@@ -116,12 +127,22 @@ Copy `.env.example` to `.env`:
 
 ```env
 DSN="host=localhost user=postgres password=pass dbname=linkshort port=5432 sslmode=disable"
+DATABASE_URL="pgx5://postgres:pass@localhost:5432/linkshort"
 TOKEN="your_jwt_secret"
 REDIS_URL="localhost:6379"
+REDIS_CACHE_MINUTES=5
 STRIPE_KEY="sk_test_..."
 STRIPE_WEBHOOK_SECRET="whsec_..."
 RABBITMQ_URL="amqp://guest:guest@localhost:5672/"
 RABBITMQ_CONSUMERS=1
+
+CLICKHOUSE_ADDR=localhost:9000
+CLICKHOUSE_DB=default
+CLICKHOUSE_USER=default
+CLICKHOUSE_PASSWORD=
+
+# GeoIP — optional, country detection is disabled if unset
+GEOIP_PATH=/path/to/GeoLite2-Country.mmdb
 
 # Mailer (SMTP) — optional, emails are skipped if SMTP_HOST is empty
 SMTP_HOST=smtp.example.com
@@ -135,22 +156,27 @@ SMTP_FROM=no-reply@example.com
 
 If `SMTP_HOST` is left empty, the mailer is disabled and no emails are sent.
 
+If `GEOIP_PATH` is not set, country detection is silently skipped and the `country` field is stored as an empty string.
+
 ### Running with Docker + Make
 
 ```bash
-# Start infrastructure (Postgres, Redis, RabbitMQ) + server + all consumers + frontend
+# Start infrastructure (Postgres, ClickHouse, Redis, RabbitMQ) + server + all consumers + frontend
 make dev
 
 # Or step by step:
-make docker-up       # start infrastructure
-make migrate         # run database migrations
-make server          # HTTP server only (port 8081)
-make consumers       # all consumer workers
+make docker-up           # start infrastructure
+make migrate             # run all migrations (postgres + clickhouse)
+make migrate-postgres    # postgres only
+make migrate-clickhouse  # clickhouse only
+make server              # HTTP server only (port 8081)
+make consumers           # all consumer workers
 make consumer-payment
 make consumer-subscription
 make consumer-invoice
-make frontend        # Nuxt dev server
-make stripe-webhook  # listen for Stripe webhooks (Stripe CLI)
+make consumer-stats
+make frontend            # Nuxt dev server
+make stripe-webhook      # listen for Stripe webhooks (Stripe CLI)
 
 # Scale consumers (e.g. 3 workers each)
 make consumers WORKERS=3
@@ -168,6 +194,7 @@ go run ./cmd/server
 go run ./cmd/consumers/paymentIntent
 go run ./cmd/consumers/subscription
 go run ./cmd/consumers/invoice
+go run ./cmd/consumers/stats
 
 # Frontend
 cd frontend && pnpm install && pnpm dev
@@ -177,18 +204,25 @@ cd frontend && pnpm install && pnpm dev
 
 ```bash
 make build
-# Produces: bin/server, bin/consumer-payment, bin/consumer-subscription, bin/consumer-invoice
+# Produces: bin/server, bin/consumer-payment, bin/consumer-subscription, bin/consumer-invoice, bin/consumer-stats
 ```
 
 ### Database Migrations
 
 ```bash
-migrate -path migrations/sql -database "$DSN" up
+# Run all (postgres + clickhouse)
+go run ./migrations
+
+# Postgres only
+go run ./migrations -target=postgres
+
+# ClickHouse only
+go run ./migrations -target=clickhouse
 ```
 
 ## Async Event Architecture
 
-Stripe webhook events are handled asynchronously via RabbitMQ:
+Stripe webhook events and click tracking are handled asynchronously via RabbitMQ:
 
 ```
 Stripe → POST /stripe/webhook
@@ -209,12 +243,35 @@ Stripe → POST /stripe/webhook
                                                           Invoice consumer
                                                           (upsert invoice + payment record,
                                                            send payment confirmation email)
+
+GET /{hash} → redirect
+           │
+           └── link.visited event → Stats exchange → statsQueue
+                                                          │
+                                                    Stats consumer
+                                                    (insert into ClickHouse link_clicks,
+                                                     invalidate Redis stats cache)
 ```
 
 Each consumer binary:
 1. Creates its own exchange and queue on startup (idempotent)
 2. Processes messages with manual Ack/Nack
 3. Nacks on error (message re-queued for retry), except Stripe 400 errors (discarded)
+
+## Click Statistics
+
+Click events are captured on every redirect (`GET /{hash}`) and published to RabbitMQ. The stats consumer writes them to ClickHouse and invalidates the Redis cache for that link.
+
+Each `link_clicks` row captures:
+- `link_id`, `clicked_at`
+- Network: `ip`, `country`, `forwarded_for`, `real_ip`, `remote_addr`
+- Headers: `user_agent`, `referer`, `accept_language`, `origin`
+- Device: `device_type`, `os`, `browser`
+- Security: `fingerprint`, `request_id`, `scheme`
+
+The `country` field is populated via MaxMind GeoLite2 if `GEOIP_PATH` is configured.
+
+Stats are cached in Redis per `(email, linkID, date-range)`. The cache is invalidated by pattern `*:link:{id}:*` whenever new clicks are inserted.
 
 ## API Endpoints
 
@@ -248,7 +305,7 @@ Each consumer binary:
 | POST | `/link` | Yes + Active Sub | Create shortened link |
 | PATCH | `/link/{id}` | Yes | Update link |
 | DELETE | `/link/{id}` | Yes | Delete link |
-| GET | `/{hash}` | No | Redirect to original URL |
+| GET | `/{hash}` | No | Redirect to original URL (publishes click event) |
 
 ### Plans & Subscriptions
 
@@ -274,8 +331,8 @@ Each consumer binary:
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/stats` | Yes | Link stats `?from=&to=&linkId=` |
-| GET | `/stats/clicks` | Yes | Total clicks `?from=&to=` |
+| GET | `/stats` | Yes | Raw click events `?from=&to=&linkId=` |
+| GET | `/stats/link/{id}` | Yes | Clicks grouped by date `?from=&to=` |
 
 ## Auth Flow
 
@@ -331,7 +388,7 @@ Every login creates an `auth_sessions` record with token, expiry, IP address, us
 |-------|-------------|
 | `/auth/login` | Login form (with 2FA code step if enabled) |
 | `/auth/register` | Registration form (auto-creates account after signup) |
-| `/dashboard` | User's links list |
+| `/dashboard` | User's links list with per-link stats drawer |
 | `/billing` | Plans, subscription status, cancel button |
 | `/payments` | Payment history table |
 | `/account` | Profile info and 2FA setup |
@@ -346,32 +403,8 @@ Every login creates an `auth_sessions` record with token, expiry, IP address, us
 - **Mailer** — `internal/mailer/` is a shared SMTP client; `AuthMailer` sends welcome email on registration; `InvoiceConsumer` sends payment confirmation asynchronously (goroutine) after invoice paid; if `SMTP_HOST` is empty, all sends are silently skipped
 - **Email i18n** — templates live in `internal/locales/` (embedded via `embed.FS`), translated via `go-i18n` + TOML files (EN/RU/DE)
 - **TOTP** — 30-second window, ±5 second skew tolerance, SHA1, 6-digit codes via `pquerna/otp`
-
-## Roadmap
-
-### 1. Columnar DB for Click Statistics
-
-- Introduce **ClickHouse** or **TimescaleDB** for analytical queries
-- Publish click events with geo/device metadata
-- Rewrite `GET /stats` to query ClickHouse
-
----
-
-### 2. Rate Limiting (RPS)
-
-- Token-bucket limiter via Redis
-- Global IP-based + per-user quotas configurable per plan
-- `429 Too Many Requests` with `Retry-After`
-
----
-
-### 3. Scaling & Monitoring
-
-- Horizontal scaling with stateless Go instances
-- Prometheus metrics endpoint, OpenTelemetry tracing
-- Grafana dashboards — latency, queue depth, payment success rate
-
----
+- **ClickHouse table** — `link_clicks` uses `ReplacingMergeTree`, partitioned by month, ordered by `(link_id, clicked_at, request_id)`; deduplication is eventual
+- **Stats cache invalidation** — when the stats consumer inserts into ClickHouse, it calls `redis.DelByPattern("*:link:{id}:*")` to clear all cached reports for that link
 
 ## License
 
