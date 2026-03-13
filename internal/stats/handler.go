@@ -55,7 +55,6 @@ func NewStatsHandler(router *http.ServeMux, deps StatsHandlerDeps) {
 
 func (stats *StatsHandler) getStats() http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		email, _ := req.Context().Value(middleware.ContextEmailKey).(string)
 		queries := parsedTimeQuery([]string{"from", "to"}, req)
 
 		var linkID *uint
@@ -70,7 +69,7 @@ func (stats *StatsHandler) getStats() http.HandlerFunc {
 		if linkID != nil {
 			cacheID = *linkID
 		}
-		cachedStats, _ := GetCachedStat[[]Stats](stats.redis, queries, email, cacheID)
+		cachedStats, _ := GetCachedStat[[]Stats](stats.redis, queries, cacheID)
 
 		if cachedStats != nil && linkID == nil {
 			stats.responsePkg.Json(&response.JsonOptions{
@@ -105,19 +104,6 @@ func (stats *StatsHandler) getStats() http.HandlerFunc {
 
 func (stats *StatsHandler) getGroupedStatsByDate() http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		email, ok := req.Context().Value(middleware.ContextEmailKey).(string)
-
-		if !ok {
-			stats.responsePkg.Json(&response.JsonOptions{
-				Data: &errorType.ErrorType{
-					Error: "Unathrorized",
-				},
-				Code:   http.StatusBadRequest,
-				Writer: w,
-				Reader: req,
-			})
-		}
-
 		parsed, err := strconv.ParseUint(req.PathValue("id"), 10, 64)
 		if err != nil {
 			stats.responsePkg.Json(&response.JsonOptions{
@@ -132,7 +118,7 @@ func (stats *StatsHandler) getGroupedStatsByDate() http.HandlerFunc {
 		linkID := uint(parsed)
 		queries := parsedTimeQuery([]string{"from", "to"}, req)
 
-		cachedStats, _ := GetCachedStat[[]GetStatByLink](stats.redis, queries, email, linkID)
+		cachedStats, _ := GetCachedStat[[]GetStatByLink](stats.redis, queries, linkID)
 
 		if cachedStats != nil {
 			stats.responsePkg.Json(&response.JsonOptions{
@@ -156,7 +142,7 @@ func (stats *StatsHandler) getGroupedStatsByDate() http.HandlerFunc {
 			return
 		}
 
-		SetCachedStat(stats.redis, result, queries, email, linkID)
+		SetCachedStat(stats.redis, result, queries, linkID)
 
 		stats.responsePkg.Json(&response.JsonOptions{
 			Data:   result,

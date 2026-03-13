@@ -108,25 +108,32 @@ func (r Redis) SIsMember(key string, member any) bool {
 	return result
 }
 
-func (r Redis) DelByPattern(pattern string) {
-	ctx := context.Background()
+func (r Redis) Del(keys ...string) int64 {
+	result, err := r.client.Del(context.Background(), keys...).Result()
+	if err != nil {
+		log.Printf("[redis] Del keys=%v error: %v", keys, err)
+	}
+	return result
+}
+
+func (r Redis) DelByPattern(pattern string) int64 {
 	var cursor uint64
+	var deleted int64
 	for {
-		keys, next, err := r.client.Scan(ctx, cursor, pattern, 100).Result()
+		keys, nextCursor, err := r.client.Scan(context.Background(), cursor, pattern, 100).Result()
 		if err != nil {
-			log.Printf("[redis] DelByPattern scan pattern=%s error: %v", pattern, err)
-			return
+			log.Printf("[redis] DelByPattern pattern=%s scan error: %v", pattern, err)
+			break
 		}
 		if len(keys) > 0 {
-			if err := r.client.Del(ctx, keys...).Err(); err != nil {
-				log.Printf("[redis] DelByPattern del error: %v", err)
-			}
+			deleted += r.Del(keys...)
 		}
-		cursor = next
+		cursor = nextCursor
 		if cursor == 0 {
 			break
 		}
 	}
+	return deleted
 }
 
 func (r Redis) Close() {

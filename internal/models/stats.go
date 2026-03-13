@@ -15,8 +15,8 @@ type StatsData struct {
 }
 
 type StatsMessage struct {
-	EventType StatsEventType `json:"eventType"`
-	Data      LinkTransition `json:"data"`
+	EventType StatsEventType         `json:"eventType"`
+	Data      *LinkTransitionWitHash `json:"data"`
 }
 
 type LinkTransition struct {
@@ -51,4 +51,9 @@ type LinkTransition struct {
 	ForwardedHost  string `ch:"forwarded_host"`
 	ForwardedPort  string `ch:"forwarded_port"`
 	Scheme         string `ch:"scheme"`
+}
+
+type LinkTransitionWitHash struct {
+	*LinkTransition
+	FilterHash string
 }

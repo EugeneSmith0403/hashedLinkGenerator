@@ -38,14 +38,16 @@ func (sc *StatsConsumer) Handle(body []byte) error {
 	}
 }
 
-func (sc *StatsConsumer) handleLinkVisited(data models.LinkTransition) error {
-	list := []models.LinkTransition{data}
+func (sc *StatsConsumer) handleLinkVisited(data *models.LinkTransitionWitHash) error {
+	list := []models.LinkTransition{*data.LinkTransition}
 	list = slices.DeleteFunc(list, func(t models.LinkTransition) bool {
 		return t.LinkID == 0
 	})
 	if err := sc.statsRepo.Insert(list); err != nil {
 		return err
 	}
-	stats.InvalidateLinkCache(sc.redis, int64(data.LinkID))
+
+	stats.InvalidateLinkCache(sc.redis, uint(data.LinkID), data.FilterHash)
+
 	return nil
 }

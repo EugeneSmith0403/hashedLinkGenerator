@@ -252,31 +252,36 @@ func (link *LinkHandler) GetTo() http.HandlerFunc {
 
 		clientContext := link.StatsService.BuildClientContext(req)
 
-		go link.StatsPublisher.PublishToQueue(models.StatsLinkVisited, models.LinkTransition{
-			LinkID:    int64(result.ID),
-			ClickedAt: clientContext.Timestamp,
+		data := &models.LinkTransitionWitHash{
+			LinkTransition: &models.LinkTransition{
+				LinkID:    int64(result.ID),
+				ClickedAt: clientContext.Timestamp,
 
-			IP:           clientContext.IP,
-			ForwardedFor: clientContext.ForwardedFor,
-			RealIP:       clientContext.RealIP,
-			RemoteAddr:   clientContext.RemoteAddr,
-			RemotePort:   clientContext.RemotePort,
-			Country:      clientContext.Country,
+				IP:           clientContext.IP,
+				ForwardedFor: clientContext.ForwardedFor,
+				RealIP:       clientContext.RealIP,
+				RemoteAddr:   clientContext.RemoteAddr,
+				RemotePort:   clientContext.RemotePort,
+				Country:      clientContext.Country,
 
-			UserAgent:      clientContext.UserAgent,
-			Accept:         clientContext.Accept,
-			AcceptLanguage: clientContext.AcceptLanguage,
-			AcceptEncoding: clientContext.AcceptEncoding,
-			Origin:         clientContext.Origin,
-			Referer:        clientContext.Referer,
+				UserAgent:      clientContext.UserAgent,
+				Accept:         clientContext.Accept,
+				AcceptLanguage: clientContext.AcceptLanguage,
+				AcceptEncoding: clientContext.AcceptEncoding,
+				Origin:         clientContext.Origin,
+				Referer:        clientContext.Referer,
 
-			Fingerprint:    clientContext.Fingerprint,
-			RequestID:      clientContext.RequestID,
-			ForwardedProto: clientContext.ForwardedProto,
-			ForwardedHost:  clientContext.ForwardedHost,
-			ForwardedPort:  clientContext.ForwardedPort,
-			Scheme:         clientContext.Scheme,
-		})
+				Fingerprint:    clientContext.Fingerprint,
+				RequestID:      clientContext.RequestID,
+				ForwardedProto: clientContext.ForwardedProto,
+				ForwardedHost:  clientContext.ForwardedHost,
+				ForwardedPort:  clientContext.ForwardedPort,
+				Scheme:         clientContext.Scheme,
+			},
+			FilterHash: hash,
+		}
+
+		go link.StatsPublisher.PublishToQueue(models.StatsLinkVisited, data)
 
 		http.Redirect(w, req, result.Url, http.StatusTemporaryRedirect)
 	}
