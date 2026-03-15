@@ -7,6 +7,7 @@ import (
 	"time"
 
 	authsession "link-generator/internal/auth_session"
+	"link-generator/pkg/limiter"
 	"link-generator/pkg/middleware"
 	"link-generator/pkg/redis"
 	"link-generator/pkg/response"
@@ -19,6 +20,7 @@ type PlanHandlerDeps struct {
 	PlanRepository     *PlanRepository
 	Redis              *redis.Redis
 	AuthSessionService *authsession.AuthSessionService
+	RateLimiter        *limiter.LimiterService
 }
 
 type PlanHandler struct {
@@ -38,6 +40,7 @@ func NewPlanHandler(router *http.ServeMux, deps PlanHandlerDeps) {
 
 	authMiddleware := middleware.Chain(
 		middleware.IsAuthed(*deps.AuthSessionService),
+		middleware.RateLimit(deps.RateLimiter, limiter.KeyByAccountID),
 	)
 
 	router.Handle("GET /plans", authMiddleware(handler.getPlans()))

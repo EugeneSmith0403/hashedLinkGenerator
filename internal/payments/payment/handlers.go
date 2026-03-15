@@ -7,6 +7,7 @@ import (
 	"link-generator/internal/account"
 	authsession "link-generator/internal/auth_session"
 	errorType "link-generator/pkg/errorType"
+	"link-generator/pkg/limiter"
 	"link-generator/pkg/middleware"
 	"link-generator/pkg/response"
 )
@@ -15,6 +16,7 @@ type PaymentHandlerDeps struct {
 	PaymentRepository  *PaymentRepository
 	AuthSessionService *authsession.AuthSessionService
 	AccountService     *account.AccountService
+	RateLimiter        *limiter.LimiterService
 }
 
 type PaymentHandler struct {
@@ -34,6 +36,7 @@ func NewPaymentHandler(router *http.ServeMux, deps PaymentHandlerDeps) {
 
 	authMiddleware := middleware.Chain(
 		middleware.IsAuthed(*deps.AuthSessionService),
+		middleware.RateLimit(deps.RateLimiter, limiter.KeyByAccountID),
 	)
 
 	router.Handle("GET /payments", authMiddleware(handler.handleGetPayments()))

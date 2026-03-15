@@ -136,6 +136,10 @@ func (r Redis) DelByPattern(pattern string) int64 {
 	return deleted
 }
 
+func (r Redis) Client() *redis.Client {
+	return r.client
+}
+
 func (r Redis) Close() {
 	r.client.Close()
 }

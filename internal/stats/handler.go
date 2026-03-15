@@ -4,6 +4,7 @@ import (
 	"link-generator/configs"
 	authsession "link-generator/internal/auth_session"
 	"link-generator/pkg/errorType"
+	"link-generator/pkg/limiter"
 	"link-generator/pkg/middleware"
 	"link-generator/pkg/redis"
 	"link-generator/pkg/response"
@@ -18,6 +19,7 @@ type StatsHandlerDeps struct {
 	StatsRepository    *StatsRepository
 	StatsService       *StatsService
 	Redis              *redis.Redis
+	RateLimiter        *limiter.LimiterService
 }
 
 type StatsHandler struct {
@@ -47,6 +49,7 @@ func NewStatsHandler(router *http.ServeMux, deps StatsHandlerDeps) {
 	// Middlewares
 	createMiddleware := middleware.Chain(
 		middleware.IsAuthed(*deps.AuthSessionService),
+		middleware.RateLimit(deps.RateLimiter, limiter.KeyByAccountID),
 	)
 
 	router.Handle("GET /stats", createMiddleware(handler.getStats()))

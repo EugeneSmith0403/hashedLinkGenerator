@@ -35,6 +35,7 @@ import (
 	"link-generator/pkg/db"
 	"link-generator/pkg/event"
 	"link-generator/pkg/helpers"
+	"link-generator/pkg/limiter"
 	"link-generator/pkg/middleware"
 	rabbitmq "link-generator/pkg/rabbitMq"
 	pkgRedis "link-generator/pkg/redis"
@@ -68,15 +69,17 @@ type services struct {
 }
 
 type app struct {
-	cfg        *configs.Config
-	db         *db.Db
-	repos      *repositories
-	svc        *services
-	redis      *pkgRedis.Redis
-	eventBus   *event.EventBus
-	rabbitMq   *rabbitmq.RabbitMq
-	clickhouse *pkgClickhouse.Clickhouse
-	geoIP      *geoip2.Reader
+	cfg           *configs.Config
+	db            *db.Db
+	repos         *repositories
+	svc           *services
+	redis         *pkgRedis.Redis
+	eventBus      *event.EventBus
+	rabbitMq      *rabbitmq.RabbitMq
+	clickhouse    *pkgClickhouse.Clickhouse
+	geoIP         *geoip2.Reader
+	rateLimiter   *limiter.LimiterService
+	ipRateLimiter *limiter.LimiterService
 }
 
 type subscriptionUserAdapter struct {
@@ -175,7 +178,11 @@ func newApp(cfg *configs.Config) *app {
 		authSession: authsession.NewAuthSessionService(database),
 	}
 
-	return &app{cfg: cfg, db: database, repos: repos, svc: svc, redis: redis, eventBus: eventBus, rabbitMq: rabbitMq, clickhouse: ch, geoIP: geoIPReader}
+	rdb := redis.Client()
+	accountLimiter := limiter.NewLimiter(rdb, limiter.Config{Capacity: 100, RefillRate: 100, KeyType: limiter.KeyByAccountID})
+	ipLimiter := limiter.NewLimiter(rdb, limiter.Config{Capacity: 100, RefillRate: 100, KeyType: limiter.KeyByIP})
+
+	return &app{cfg: cfg, db: database, repos: repos, svc: svc, redis: redis, eventBus: eventBus, rabbitMq: rabbitMq, clickhouse: ch, geoIP: geoIPReader, rateLimiter: accountLimiter, ipRateLimiter: ipLimiter}
 }
 
 func (a *subscriptionUserAdapter) GetSubscriptionByUserID(userID uint) (*models.SubscriptionInfo, error) {
@@ -221,6 +228,7 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 		},
 		AccountService:     a.svc.account,
 		AuthSeseionService: a.svc.authSession,
+		IPRateLimiter:      a.ipRateLimiter,
 	})
 	link.NewLinkHandler(router, link.LinkHandlerDeps{
 		Config:              a.cfg,
@@ -231,6 +239,8 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 		SubscriptionService: a.svc.subscription,
 		RabbitMq:            a.rabbitMq,
 		StatsService:        a.svc.stats,
+		RateLimiter:         a.rateLimiter,
+		IPRateLimiter:       a.ipRateLimiter,
 	})
 	stats.NewStatsHandler(router, stats.StatsHandlerDeps{
 		Config:             a.cfg,
@@ -238,16 +248,19 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 		StatsRepository:    a.repos.stats,
 		StatsService:       a.svc.stats,
 		Redis:              a.redis,
+		RateLimiter:        a.rateLimiter,
 	})
 	account.NewAccountHandler(router, account.AccountHandlerDeps{
 		AccountService:     a.svc.account,
 		UserRepository:     a.repos.user,
 		AuthSessionService: a.svc.authSession,
+		RateLimiter:        a.rateLimiter,
 	})
 	payment.NewPaymentHandler(router, payment.PaymentHandlerDeps{
 		PaymentRepository:  a.repos.payment,
 		AuthSessionService: a.svc.authSession,
 		AccountService:     a.svc.account,
+		RateLimiter:        a.rateLimiter,
 	})
 	stripe.NewStripeHandlers(router, stripe.StripeHandlerDeps{
 		PaymentService:      a.svc.payment,
@@ -255,17 +268,20 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 		AccountService:      a.svc.account,
 		PlanRepository:      a.repos.plan,
 		SubscriptionService: a.svc.subscription,
+		RateLimiter:         a.rateLimiter,
 	})
 	subscription.NewSubscriptionHandlers(router, subscription.SubscriptionHandlerDeps{
 		SubscriptionService: a.svc.subscription,
 		AuthSessionService:  a.svc.authSession,
 		AccountService:      a.svc.account,
 		PlanRepository:      a.repos.plan,
+		RateLimiter:         a.rateLimiter,
 	})
 	plan.NewPlanHandler(router, plan.PlanHandlerDeps{
 		PlanRepository:     a.repos.plan,
 		Redis:              a.redis,
 		AuthSessionService: a.svc.authSession,
+		RateLimiter:        a.rateLimiter,
 	})
 	webhook.NewWebhookHandlers(router, webhook.WebhookHandlerDeps{
 		PaymentService:         a.svc.payment,
@@ -281,6 +297,8 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 		SubscriptionService: &subscriptionUserAdapter{svc: a.svc.subscription},
 		AuthService:         a.svc.auth,
 		AuthSeseionService:  a.svc.authSession,
+		RateLimiter:         a.rateLimiter,
+		IPRateLimiter:       a.ipRateLimiter,
 	})
 
 	api.RegisterDocsRoutes(router, "api/openapi.yaml")

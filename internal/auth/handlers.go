@@ -5,6 +5,8 @@ import (
 	"link-generator/internal/models"
 	errorType "link-generator/pkg/errorType"
 	"link-generator/pkg/helpers"
+	"link-generator/pkg/limiter"
+	"link-generator/pkg/middleware"
 	"link-generator/pkg/request"
 	"link-generator/pkg/response"
 	"net/http"
@@ -15,6 +17,7 @@ type AuthHandlerDeps struct {
 	AuthMailerDeps     AuthMailerDeps
 	AccountService     models.IAccountService
 	AuthSeseionService *authsession.AuthSessionService
+	IPRateLimiter      *limiter.LimiterService
 }
 
 type AuthHandler struct {
@@ -41,8 +44,10 @@ func NewAuthHandlers(router *http.ServeMux, deps AuthHandlerDeps) {
 		AccountService:     deps.AccountService,
 		AuthSeseionService: deps.AuthSeseionService,
 	}
-	router.HandleFunc("POST /auth/login", handler.Login())
-	router.HandleFunc("POST /auth/register", handler.Register())
+	ipRateLimit := middleware.RateLimit(deps.IPRateLimiter, limiter.KeyByIP)
+
+	router.Handle("POST /auth/login", ipRateLimit(handler.Login()))
+	router.Handle("POST /auth/register", ipRateLimit(handler.Register()))
 }
 
 func (auth *AuthHandler) Login() http.HandlerFunc {
