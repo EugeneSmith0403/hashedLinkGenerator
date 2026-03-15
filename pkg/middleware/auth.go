@@ -11,8 +11,9 @@ import (
 type key string
 
 const (
-	ContextEmailKey key    = "ContextEmailKey"
-	unauthorized    string = "Unauthorized"
+	ContextEmailKey     key    = "ContextEmailKey"
+	ContextAccountIDKey key    = "ContextAccountIDKey"
+	unauthorized        string = "Unauthorized"
 )
 
 func IsAuthed(authSession authsession.AuthSessionService, verify ...bool) func(http.Handler) http.Handler {
@@ -39,6 +40,7 @@ func IsAuthed(authSession authsession.AuthSessionService, verify ...bool) func(h
 			}
 
 			ctx := context.WithValue(r.Context(), ContextEmailKey, res.Account.User.Email)
+			ctx = context.WithValue(ctx, ContextAccountIDKey, res.Account.ID)
 
 			req := r.WithContext(ctx)
 			next.ServeHTTP(w, req)
