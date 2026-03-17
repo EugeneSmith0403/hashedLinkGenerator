@@ -1,0 +1,136 @@
+{
+  "title": "ClickHouse",
+  "uid": "clickhouse",
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Status",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "options": { "colorMode": "background" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "clickhouse_up",
+          "legendFormat": "up"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Running Queries",
+      "type": "stat",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "clickhouse_metrics_Query",
+          "legendFormat": "queries"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Memory Usage",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "clickhouse_metrics_MemoryTracking",
+          "legendFormat": "memory"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Connections",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "clickhouse_metrics_TCPConnection",
+          "legendFormat": "TCP"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Queries / s",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(clickhouse_events_Query[1m])",
+          "legendFormat": "queries/s"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(clickhouse_events_SelectQuery[1m])",
+          "legendFormat": "select/s"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(clickhouse_events_InsertQuery[1m])",
+          "legendFormat": "insert/s"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Inserted Rows / s",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(clickhouse_events_InsertedRows[1m])",
+          "legendFormat": "rows/s"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(clickhouse_events_InsertedBytes[1m])",
+          "legendFormat": "bytes/s"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Memory Over Time",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "clickhouse_metrics_MemoryTracking",
+          "legendFormat": "tracking"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Background Merges",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "clickhouse_metrics_Merge",
+          "legendFormat": "merges"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(clickhouse_events_MergedRows[1m])",
+          "legendFormat": "merged rows/s"
+        }
+      ]
+    }
+  ]
+}

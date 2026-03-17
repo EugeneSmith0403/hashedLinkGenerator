@@ -1,10 +1,13 @@
 package middleware
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
 )
+
+var logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 func Logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -14,6 +17,12 @@ func Logging(next http.Handler) http.Handler {
 			statusCode:     http.StatusOK,
 		}
 		next.ServeHTTP(wrapper, r)
-		log.Println(r.Method, r.URL.Path, time.Since(start))
+		logger.Info("request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", wrapper.statusCode,
+			"duration_ms", time.Since(start).Milliseconds(),
+			"ip", r.RemoteAddr,
+		)
 	})
 }

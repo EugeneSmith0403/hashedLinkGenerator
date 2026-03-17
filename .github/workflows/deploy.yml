@@ -1,0 +1,139 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  # ── Test ────────────────────────────────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests
+        run: go test ./...
+
+  # ── Build & Push ────────────────────────────────────────────────────────────
+  build:
+    name: Build & Push
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/master'
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        include:
+          - name: server
+            dockerfile: docker/Dockerfile.server
+            build_args: ""
+          - name: consumer-payment
+            dockerfile: docker/Dockerfile.consumer
+            build_args: "CONSUMER=paymentIntent"
+          - name: consumer-subscription
+            dockerfile: docker/Dockerfile.consumer
+            build_args: "CONSUMER=subscription"
+          - name: consumer-invoice
+            dockerfile: docker/Dockerfile.consumer
+            build_args: "CONSUMER=invoice"
+          - name: consumer-stats
+            dockerfile: docker/Dockerfile.consumer
+            build_args: "CONSUMER=stats"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push ${{ matrix.name }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-args: ${{ matrix.build_args }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/link-generator-${{ matrix.name }}:latest
+            ${{ env.IMAGE_PREFIX }}/link-generator-${{ matrix.name }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── Deploy ──────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/master'
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Update image tags in manifests
+        run: |
+          SHA=${{ github.sha }}
+          REGISTRY=${{ env.IMAGE_PREFIX }}
+          sed -i "s|your-registry/link-generator-server:latest|${REGISTRY}/link-generator-server:${SHA}|g" k8s/deployments/server.yaml
+          sed -i "s|your-registry/link-generator-consumer-payment:latest|${REGISTRY}/link-generator-consumer-payment:${SHA}|g" k8s/deployments/consumers.yaml
+          sed -i "s|your-registry/link-generator-consumer-subscription:latest|${REGISTRY}/link-generator-consumer-subscription:${SHA}|g" k8s/deployments/consumers.yaml
+          sed -i "s|your-registry/link-generator-consumer-invoice:latest|${REGISTRY}/link-generator-consumer-invoice:${SHA}|g" k8s/deployments/consumers.yaml
+          sed -i "s|your-registry/link-generator-consumer-stats:latest|${REGISTRY}/link-generator-consumer-stats:${SHA}|g" k8s/deployments/consumers.yaml
+
+      - name: Apply manifests
+        working-directory: k8s
+        run: |
+          kubectl apply -f namespace.yaml
+          kubectl apply -f statefulsets/
+          kubectl apply -f services/
+          kubectl apply -f deployments/
+          kubectl apply -f ingress/
+          kubectl apply -f hpa/
+          kubectl apply -f monitoring/
+
+      - name: Wait for rollout
+        run: |
+          NAMESPACE=link-generator
+          kubectl rollout status deployment/server -n $NAMESPACE --timeout=120s
+          kubectl rollout status deployment/consumer-payment -n $NAMESPACE --timeout=120s
+          kubectl rollout status deployment/consumer-subscription -n $NAMESPACE --timeout=120s
+          kubectl rollout status deployment/consumer-invoice -n $NAMESPACE --timeout=120s
+          kubectl rollout status deployment/consumer-stats -n $NAMESPACE --timeout=120s
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "Deployment failed for commit ${{ github.sha }}"
+          echo "Check the logs above for details"

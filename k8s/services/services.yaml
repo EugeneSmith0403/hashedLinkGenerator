@@ -1,0 +1,75 @@
+# ClusterIP - internal only (databases and queues)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: link-generator
+spec:
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+  clusterIP: None   # Headless service for StatefulSet
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: link-generator
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+  clusterIP: None
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: link-generator
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+  - name: amqp
+    port: 5672
+    targetPort: 5672
+  - name: management
+    port: 15672
+    targetPort: 15672
+  clusterIP: None
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  namespace: link-generator
+spec:
+  selector:
+    app: clickhouse
+  ports:
+  - name: http
+    port: 8123
+    targetPort: 8123
+  - name: native
+    port: 9000
+    targetPort: 9000
+  clusterIP: None
+---
+# ClusterIP for Go server — exposed externally via Ingress
+apiVersion: v1
+kind: Service
+metadata:
+  name: server
+  namespace: link-generator
+spec:
+  selector:
+    app: server
+  ports:
+  - port: 80
+    targetPort: 8081
+  type: ClusterIP
