@@ -14,6 +14,7 @@ type Config struct {
 	Db         DbConfig
 	Auth       AuthConfig
 	TOTP       TOTPConfig
+	RateLimit  RateLimitConfig
 	Stripe     StripeConfig
 	Redis      Redis
 	RabbitMq   RabbitMq
@@ -71,6 +72,16 @@ type TOTPConfig struct {
 	Skew   uint
 }
 
+type RateLimiterConfig struct {
+	Capacity   int
+	RefillRate float64
+}
+
+type RateLimitConfig struct {
+	Account RateLimiterConfig
+	IP      RateLimiterConfig
+}
+
 func smtpPort(s string) int {
 	port, err := strconv.Atoi(s)
 	if err != nil {
@@ -92,6 +103,22 @@ func envString(key, defaultVal string) string {
 		return v
 	}
 	return defaultVal
+}
+
+func envInt(key string, defaultVal int) int {
+	v, err := strconv.Atoi(os.Getenv(key))
+	if err != nil {
+		return defaultVal
+	}
+	return v
+}
+
+func envFloat(key string, defaultVal float64) float64 {
+	v, err := strconv.ParseFloat(os.Getenv(key), 64)
+	if err != nil {
+		return defaultVal
+	}
+	return v
 }
 
 func LoadConfig(envFiles ...string) *Config {
@@ -118,6 +145,16 @@ func LoadConfig(envFiles ...string) *Config {
 			Issuer: envString("TOTP_ISSUER", "LinkShort"),
 			Period: envUint("TOTP_PERIOD", 30),
 			Skew:   envUint("TOTP_SKEW", 5),
+		},
+		RateLimit: RateLimitConfig{
+			Account: RateLimiterConfig{
+				Capacity:   envInt("RATE_LIMIT_ACCOUNT_CAPACITY", 100),
+				RefillRate: envFloat("RATE_LIMIT_ACCOUNT_REFILL_RATE", 100),
+			},
+			IP: RateLimiterConfig{
+				Capacity:   envInt("RATE_LIMIT_IP_CAPACITY", 100),
+				RefillRate: envFloat("RATE_LIMIT_IP_REFILL_RATE", 100),
+			},
 		},
 		Stripe: StripeConfig{
 			Mode:          os.Getenv("MODE"),

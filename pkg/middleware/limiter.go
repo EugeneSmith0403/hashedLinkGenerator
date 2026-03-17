@@ -8,18 +8,23 @@ import (
 	"net/http"
 )
 
+const (
+	errRateLimitUnauthorized = "Unauthorized"
+	errTooManyRequests       = "too many requests"
+)
+
 func RateLimit(svc *limiter.LimiterService, keyType limiter.KeyType) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			value, ok := resolveKey(r, keyType)
 			if !ok {
-				writeJSONError(w, "Unauthorized", http.StatusUnauthorized)
+				writeJSONError(w, errRateLimitUnauthorized, http.StatusUnauthorized)
 				return
 			}
 
 			result, err := svc.Allow(r.Context(), value)
 			if err != nil || !result.Allowed {
-				writeJSONError(w, "too many requests", http.StatusTooManyRequests)
+				writeJSONError(w, errTooManyRequests, http.StatusTooManyRequests)
 				return
 			}
 

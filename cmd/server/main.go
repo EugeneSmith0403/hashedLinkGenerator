@@ -180,8 +180,8 @@ func newApp(cfg *configs.Config) *app {
 	}
 
 	rdb := redis.Client()
-	accountLimiter := limiter.NewLimiter(rdb, limiter.Config{Capacity: 100, RefillRate: 100, KeyType: limiter.KeyByAccountID})
-	ipLimiter := limiter.NewLimiter(rdb, limiter.Config{Capacity: 100, RefillRate: 100, KeyType: limiter.KeyByIP})
+	accountLimiter := limiter.NewLimiter(rdb, limiter.Config{Capacity: cfg.RateLimit.Account.Capacity, RefillRate: cfg.RateLimit.Account.RefillRate, KeyType: limiter.KeyByAccountID})
+	ipLimiter := limiter.NewLimiter(rdb, limiter.Config{Capacity: cfg.RateLimit.IP.Capacity, RefillRate: cfg.RateLimit.IP.RefillRate, KeyType: limiter.KeyByIP})
 
 	return &app{cfg: cfg, db: database, repos: repos, svc: svc, redis: redis, eventBus: eventBus, rabbitMq: rabbitMq, clickhouse: ch, geoIP: geoIPReader, rateLimiter: accountLimiter, ipRateLimiter: ipLimiter}
 }
