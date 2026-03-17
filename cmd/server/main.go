@@ -154,6 +154,7 @@ func newApp(cfg *configs.Config) *app {
 			PaymentService:    customerAcct,
 			UserRepository:    repos.user,
 			Redis:             redis,
+			Config:            cfg,
 		}),
 		subscription: subscription.NewSubscriptionService(subscription.SubscriptionServiceDeps{
 			SubscriptionRepository: repos.subscription,
@@ -250,6 +251,7 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 		StatsService:       a.svc.stats,
 		Redis:              a.redis,
 		RateLimiter:        a.rateLimiter,
+		LinkRepository:     a.repos.link,
 	})
 	account.NewAccountHandler(router, account.AccountHandlerDeps{
 		AccountService:     a.svc.account,

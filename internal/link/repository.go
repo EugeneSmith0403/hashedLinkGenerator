@@ -71,6 +71,10 @@ func (r *LinkRepository) GetByUserID(userID uint) ([]*models.Link, error) {
 }
 
 func (r *LinkRepository) getById(id uint) (*models.Link, error) {
+	return r.GetByID(id)
+}
+
+func (r *LinkRepository) GetByID(id uint) (*models.Link, error) {
 	var link models.Link
 	result := r.db.DB.First(&link, id)
 
@@ -79,5 +83,4 @@ func (r *LinkRepository) getById(id uint) (*models.Link, error) {
 	}
 
 	return &link, nil
-
 }

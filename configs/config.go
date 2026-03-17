@@ -13,6 +13,7 @@ type Config struct {
 	GeoIPPath  string
 	Db         DbConfig
 	Auth       AuthConfig
+	TOTP       TOTPConfig
 	Stripe     StripeConfig
 	Redis      Redis
 	RabbitMq   RabbitMq
@@ -64,12 +65,33 @@ type AuthConfig struct {
 	ExpiredAt string
 }
 
+type TOTPConfig struct {
+	Issuer string
+	Period uint
+	Skew   uint
+}
+
 func smtpPort(s string) int {
 	port, err := strconv.Atoi(s)
 	if err != nil {
 		return 587
 	}
 	return port
+}
+
+func envUint(key string, defaultVal uint) uint {
+	v, err := strconv.ParseUint(os.Getenv(key), 10, 64)
+	if err != nil {
+		return defaultVal
+	}
+	return uint(v)
+}
+
+func envString(key, defaultVal string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return defaultVal
 }
 
 func LoadConfig(envFiles ...string) *Config {
@@ -91,6 +113,11 @@ func LoadConfig(envFiles ...string) *Config {
 		Auth: AuthConfig{
 			Secret:    os.Getenv("TOKEN"),
 			ExpiredAt: os.Getenv("EXPIRED_AT"),
+		},
+		TOTP: TOTPConfig{
+			Issuer: envString("TOTP_ISSUER", "LinkShort"),
+			Period: envUint("TOTP_PERIOD", 30),
+			Skew:   envUint("TOTP_SKEW", 5),
 		},
 		Stripe: StripeConfig{
 			Mode:          os.Getenv("MODE"),
