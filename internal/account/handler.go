@@ -43,7 +43,7 @@ func NewAccountHandler(router *http.ServeMux, deps AccountHandlerDeps) {
 
 	// Middlewares
 	createMiddleware := middleware.Chain(
-		middleware.IsAuthed(*deps.AuthSessionService),
+		middleware.IsAuthed(*deps.AuthSessionService, true),
 		middleware.RateLimit(deps.RateLimiter, limiter.KeyByAccountID),
 	)
 

@@ -17,7 +17,7 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   if (import.meta.server) {
     nuxtApp.hooks.hook('app:rendered', () => {
-      vueQueryState.value = dehydrate(queryClient)
+      vueQueryState.value = JSON.parse(JSON.stringify(dehydrate(queryClient)))
     })
   }
 

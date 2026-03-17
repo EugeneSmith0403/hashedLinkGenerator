@@ -18,6 +18,7 @@ type AuthHandlerDeps struct {
 	AccountService     models.IAccountService
 	AuthSeseionService *authsession.AuthSessionService
 	IPRateLimiter      *limiter.LimiterService
+	UserRepository     IUserRepository
 }
 
 type AuthHandler struct {
@@ -26,6 +27,7 @@ type AuthHandler struct {
 	authMailer         *AuthMailer
 	AccountService     models.IAccountService
 	AuthSeseionService *authsession.AuthSessionService
+	UserRepository     IUserRepository
 }
 
 func NewAuthHandlers(router *http.ServeMux, deps AuthHandlerDeps) {
@@ -43,6 +45,7 @@ func NewAuthHandlers(router *http.ServeMux, deps AuthHandlerDeps) {
 		authMailer:         NewAuthMailer(deps.AuthMailerDeps),
 		AccountService:     deps.AccountService,
 		AuthSeseionService: deps.AuthSeseionService,
+		UserRepository:     deps.UserRepository,
 	}
 	ipRateLimit := middleware.RateLimit(deps.IPRateLimiter, limiter.KeyByIP)
 
@@ -92,7 +95,7 @@ func (auth *AuthHandler) Login() http.HandlerFunc {
 		var token string
 
 		if !accInfo.Is2FAEnabled {
-			generatedToken, _, tokenErr := auth.AuthService.GenerateToken(body.Email)
+			generatedToken, expTime, tokenErr := auth.AuthService.GenerateToken(body.Email)
 			if tokenErr != nil {
 				auth.responsePkg.Json(&response.JsonOptions{
 					Data:   errorType.ErrorType{Error: tokenErr.Error()},
@@ -103,6 +106,24 @@ func (auth *AuthHandler) Login() http.HandlerFunc {
 				return
 			}
 			token = generatedToken
+
+			_, sessionErr := auth.AuthSeseionService.Update(&authsession.AddOptions{
+				AccountID: accInfo.AccountID,
+				Token:     token,
+				ExpiresAt: expTime,
+				IsVerify:  true,
+				IpAddress: helpers.GetClientIP(req),
+				UserAgent: req.UserAgent(),
+			})
+			if sessionErr != nil {
+				auth.responsePkg.Json(&response.JsonOptions{
+					Data:   errorType.ErrorType{Error: sessionErr.Error()},
+					Writer: w,
+					Reader: req,
+					Code:   http.StatusInternalServerError,
+				})
+				return
+			}
 		}
 
 		res := &LoginResponse{
@@ -151,6 +172,37 @@ func (auth *AuthHandler) Register() http.HandlerFunc {
 			return
 		}
 
+		foundUser, err := auth.UserRepository.FindByEmail(email)
+		if err != nil {
+			auth.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: err.Error()},
+				Writer: w,
+				Reader: req,
+				Code:   http.StatusInternalServerError,
+			})
+			return
+		}
+		if foundUser == nil {
+			auth.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: "user not found"},
+				Writer: w,
+				Reader: req,
+				Code:   http.StatusNotFound,
+			})
+			return
+		}
+
+		account, createErr := auth.AccountService.CreateAccount(foundUser.Model.ID, foundUser.Name, foundUser.Email)
+		if createErr != nil {
+			auth.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: createErr.Error()},
+				Writer: w,
+				Reader: req,
+				Code:   http.StatusInternalServerError,
+			})
+			return
+		}
+
 		token, expTime, tokenErr := auth.AuthService.GenerateToken(email)
 		if tokenErr != nil {
 			auth.responsePkg.Json(&response.JsonOptions{
@@ -167,13 +219,24 @@ func (auth *AuthHandler) Register() http.HandlerFunc {
 			Token: token,
 		}
 
-		auth.AuthSeseionService.Update(&authsession.AddOptions{
+		_, upErr := auth.AuthSeseionService.Update(&authsession.AddOptions{
+			AccountID: account.Model.ID,
 			Token:     token,
 			ExpiresAt: expTime,
 			IsVerify:  false,
 			IpAddress: helpers.GetClientIP(req),
 			UserAgent: req.UserAgent(),
 		})
+
+		if upErr != nil {
+			auth.responsePkg.Json(&response.JsonOptions{
+				Data:   errorType.ErrorType{Error: upErr.Error()},
+				Writer: w,
+				Reader: req,
+				Code:   http.StatusInternalServerError,
+			})
+			return
+		}
 
 		go auth.authMailer.SendWelcomeEmail(body.Name, email, "en")
 

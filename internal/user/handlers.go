@@ -57,7 +57,7 @@ func NewUserHandlers(router *http.ServeMux, deps UserHandlerDeps) {
 	}
 
 	authMiddleware := middleware.Chain(
-		middleware.IsAuthed(*deps.AuthSeseionService),
+		middleware.IsAuthed(*deps.AuthSeseionService, true),
 		middleware.RateLimit(deps.RateLimiter, limiter.KeyByAccountID),
 	)
 

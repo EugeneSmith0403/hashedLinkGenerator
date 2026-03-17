@@ -229,6 +229,7 @@ func (a *app) registerHandlers(router *http.ServeMux) {
 		AccountService:     a.svc.account,
 		AuthSeseionService: a.svc.authSession,
 		IPRateLimiter:      a.ipRateLimiter,
+		UserRepository:     a.repos.user,
 	})
 	link.NewLinkHandler(router, link.LinkHandlerDeps{
 		Config:              a.cfg,

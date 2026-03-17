@@ -45,7 +45,7 @@ func (a *AuthSessionRepository) GetByToken(token string) (*models.AuthSessionWit
 	res := a.db.DB.
 		Preload("Account").
 		Preload("Account.User").
-		First(&result, "token=?", token)
+		First(&result, "token=? AND is_active=true", token)
 
 	if res.Error != nil {
 		return nil, res.Error

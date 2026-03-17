@@ -147,6 +147,7 @@ func (s *AccountService) GetAccountInfoByEmail(email string) (*models.AccountInf
 		return nil, err
 	}
 	return &models.AccountInfo{
+		AccountID:    acc.ID,
 		UserID:       acc.UserID,
 		Is2FAEnabled: acc.Is2FAEnabled,
 		TotpSecret:   acc.TotpSecret,
