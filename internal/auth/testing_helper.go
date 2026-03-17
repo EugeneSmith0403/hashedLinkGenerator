@@ -7,6 +7,10 @@ import (
 
 type mockAccountService struct{}
 
+func (m *mockAccountService) CreateAccount(userId uint, name, email string) (*models.Account, error) {
+	return &models.Account{}, nil
+}
+
 func (m *mockAccountService) GetAccountInfoByEmail(email string) (*models.AccountInfo, error) {
 	return &models.AccountInfo{Is2FAEnabled: false}, nil
 }

@@ -10,6 +10,7 @@ import (
 	authsession "link-generator/internal/auth_session"
 	"link-generator/internal/payments/plan"
 	errorType "link-generator/pkg/errorType"
+	"link-generator/pkg/limiter"
 	"link-generator/pkg/middleware"
 	"link-generator/pkg/request"
 	"link-generator/pkg/response"
@@ -54,6 +55,7 @@ type SubscriptionHandlerDeps struct {
 	AuthSessionService  *authsession.AuthSessionService
 	AccountService      *account.AccountService
 	PlanRepository      *plan.PlanRepository
+	RateLimiter         *limiter.LimiterService
 }
 
 type SubscriptionHandler struct {
@@ -75,6 +77,7 @@ func NewSubscriptionHandlers(router *http.ServeMux, deps SubscriptionHandlerDeps
 
 	authMiddleware := middleware.Chain(
 		middleware.IsAuthed(*deps.AuthSessionService),
+		middleware.RateLimit(deps.RateLimiter, limiter.KeyByAccountID),
 	)
 
 	router.Handle("GET /subscriptions/me", authMiddleware(handler.handleGetCurrentSubscription()))

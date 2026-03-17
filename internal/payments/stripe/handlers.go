@@ -11,6 +11,7 @@ import (
 	"link-generator/internal/payments/subscription"
 	stripeServices "link-generator/internal/payments/stripe/services"
 	errorType "link-generator/pkg/errorType"
+	"link-generator/pkg/limiter"
 	"link-generator/pkg/middleware"
 	"link-generator/pkg/request"
 	"link-generator/pkg/response"
@@ -24,6 +25,7 @@ type StripeHandlerDeps struct {
 	AccountService      *account.AccountService
 	PlanRepository      *plan.PlanRepository
 	SubscriptionService *subscription.SubscriptionService
+	RateLimiter         *limiter.LimiterService
 }
 
 type StripeHandler struct {
@@ -47,6 +49,7 @@ func NewStripeHandlers(router *http.ServeMux, deps StripeHandlerDeps) {
 
 	authMiddleware := middleware.Chain(
 		middleware.IsAuthed(*deps.AuthSessionService),
+		middleware.RateLimit(deps.RateLimiter, limiter.KeyByAccountID),
 	)
 
 	router.Handle("POST /stripe/paymentIntent", authMiddleware(handler.handlePaymentIntent()))

@@ -10,6 +10,7 @@ import (
 	"log"
 	"time"
 
+	"link-generator/configs"
 	"link-generator/internal/models"
 	payments "link-generator/internal/payments/models"
 	"link-generator/internal/user"
@@ -24,13 +25,18 @@ var (
 	ErrAccountNotFound = errors.New("account not found")
 )
 
-const accountCacheTTL = 7 * 24 * time.Hour
+const (
+	accountCacheTTL  = 7 * 24 * time.Hour
+	totpImageWidth   = 200
+	totpImageHeight  = 200
+)
 
 type AccountServiceDeps struct {
 	AccountRepository *AccountRepository
 	PaymentService    payments.ICustomerAccountService
 	UserRepository    *user.UserRepository
 	Redis             *pkgRedis.Redis
+	Config            *configs.Config
 }
 
 type AccountService struct {
@@ -38,6 +44,7 @@ type AccountService struct {
 	PaymentService    payments.ICustomerAccountService
 	UserRepository    *user.UserRepository
 	redis             *pkgRedis.Redis
+	config            *configs.Config
 }
 
 func NewAccountService(accRep AccountServiceDeps) *AccountService {
@@ -46,6 +53,7 @@ func NewAccountService(accRep AccountServiceDeps) *AccountService {
 		PaymentService:    accRep.PaymentService,
 		UserRepository:    accRep.UserRepository,
 		redis:             accRep.Redis,
+		config:            accRep.Config,
 	}
 }
 
@@ -147,6 +155,7 @@ func (s *AccountService) GetAccountInfoByEmail(email string) (*models.AccountInf
 		return nil, err
 	}
 	return &models.AccountInfo{
+		AccountID:    acc.ID,
 		UserID:       acc.UserID,
 		Is2FAEnabled: acc.Is2FAEnabled,
 		TotpSecret:   acc.TotpSecret,
@@ -171,7 +180,7 @@ func (s *AccountService) Setup2FA(email string) (string, error) {
 	}
 
 	key, err := totp.Generate(totp.GenerateOpts{
-		Issuer:      "LinkShort",
+		Issuer:      s.config.TOTP.Issuer,
 		AccountName: email,
 	})
 	if err != nil {
@@ -186,7 +195,7 @@ func (s *AccountService) Setup2FA(email string) (string, error) {
 
 	s.redis.Set(accountCacheKey(email), "", 1)
 
-	img, err := key.Image(200, 200)
+	img, err := key.Image(totpImageWidth, totpImageHeight)
 	if err != nil {
 		return "", err
 	}
@@ -217,8 +226,8 @@ func (s *AccountService) Verify2Fa(code, email string) bool {
 	log.Printf("[2fa] server time=%s expected=%s got=%s", now.Format(time.RFC3339), expected, code)
 
 	isValid, _ := totp.ValidateCustom(code, accInfo.TotpSecret, now, totp.ValidateOpts{
-		Period:    30,
-		Skew:      5,
+		Period:    s.config.TOTP.Period,
+		Skew:      s.config.TOTP.Skew,
 		Digits:    otp.DigitsSix,
 		Algorithm: otp.AlgorithmSHA1,
 	})

@@ -116,24 +116,8 @@ func (r Redis) Del(keys ...string) int64 {
 	return result
 }
 
-func (r Redis) DelByPattern(pattern string) int64 {
-	var cursor uint64
-	var deleted int64
-	for {
-		keys, nextCursor, err := r.client.Scan(context.Background(), cursor, pattern, 100).Result()
-		if err != nil {
-			log.Printf("[redis] DelByPattern pattern=%s scan error: %v", pattern, err)
-			break
-		}
-		if len(keys) > 0 {
-			deleted += r.Del(keys...)
-		}
-		cursor = nextCursor
-		if cursor == 0 {
-			break
-		}
-	}
-	return deleted
+func (r Redis) Client() *redis.Client {
+	return r.client
 }
 
 func (r Redis) Close() {

@@ -8,18 +8,22 @@ import (
 	"time"
 )
 
-func statCacheKey(linkID uint, queries map[string]time.Time) (string, error) {
+func statCacheKey(linkHash string, queries map[string]time.Time) (string, error) {
 	hashQuery, err := redis.HashFilters(queries)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("link:%d:report:%s", linkID, hashQuery), nil
+	return fmt.Sprintf("link:%s:report:%s", linkHash, hashQuery), nil
 }
 
-func GetCachedStat[T any](r *redis.Redis, queries map[string]time.Time, linkID uint) (T, error) {
+func linkFilterSetKey(linkHash string) string {
+	return fmt.Sprintf("link:%s:filters", linkHash)
+}
+
+func GetCachedStat[T any](r *redis.Redis, queries map[string]time.Time, linkHash string) (T, error) {
 	var zero T
 
-	key, err := statCacheKey(linkID, queries)
+	key, err := statCacheKey(linkHash, queries)
 	if err != nil {
 		return zero, err
 	}
@@ -37,8 +41,8 @@ func GetCachedStat[T any](r *redis.Redis, queries map[string]time.Time, linkID u
 	return result, nil
 }
 
-func SetCachedStat[T any](r *redis.Redis, data T, queries map[string]time.Time, linkID uint) {
-	key, err := statCacheKey(linkID, queries)
+func SetCachedStat[T any](r *redis.Redis, data T, queries map[string]time.Time, linkHash string) {
+	key, err := statCacheKey(linkHash, queries)
 	if err != nil {
 		log.Printf("[stats] SetCachedStat hash error: %v", err)
 		return
@@ -51,10 +55,18 @@ func SetCachedStat[T any](r *redis.Redis, data T, queries map[string]time.Time, 
 	}
 
 	r.Set(key, string(jsonData), r.ExpiredCache)
+	r.SAdd(linkFilterSetKey(linkHash), key)
 }
 
-func InvalidateLinkCache(r *redis.Redis, linkID uint, hashQuery string) (int64, error) {
-	key := fmt.Sprintf("link:%d:report:%s", linkID, hashQuery)
+func InvalidateLinkCache(r *redis.Redis, linkID uint, linkHash string) (int64, error) {
+	setKey := linkFilterSetKey(linkHash)
+	keys := r.SMembers(setKey)
 
-	return r.Del(key), nil
+	var deleted int64
+	if len(keys) > 0 {
+		deleted = r.Del(keys...)
+	}
+	r.Del(setKey)
+
+	return deleted, nil
 }

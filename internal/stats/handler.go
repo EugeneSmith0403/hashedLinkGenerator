@@ -3,7 +3,9 @@ package stats
 import (
 	"link-generator/configs"
 	authsession "link-generator/internal/auth_session"
+	"link-generator/internal/models"
 	"link-generator/pkg/errorType"
+	"link-generator/pkg/limiter"
 	"link-generator/pkg/middleware"
 	"link-generator/pkg/redis"
 	"link-generator/pkg/response"
@@ -12,12 +14,18 @@ import (
 	"time"
 )
 
+type ILinkGetter interface {
+	GetByID(id uint) (*models.Link, error)
+}
+
 type StatsHandlerDeps struct {
 	*configs.Config
 	AuthSessionService *authsession.AuthSessionService
 	StatsRepository    *StatsRepository
 	StatsService       *StatsService
 	Redis              *redis.Redis
+	RateLimiter        *limiter.LimiterService
+	LinkRepository     ILinkGetter
 }
 
 type StatsHandler struct {
@@ -26,6 +34,7 @@ type StatsHandler struct {
 	StatsRepository *StatsRepository
 	statsService    *StatsService
 	redis           *redis.Redis
+	linkRepository  ILinkGetter
 }
 
 func NewStatsHandler(router *http.ServeMux, deps StatsHandlerDeps) {
@@ -42,11 +51,13 @@ func NewStatsHandler(router *http.ServeMux, deps StatsHandlerDeps) {
 		StatsRepository: deps.StatsRepository,
 		statsService:    deps.StatsService,
 		redis:           deps.Redis,
+		linkRepository:  deps.LinkRepository,
 	}
 
 	// Middlewares
 	createMiddleware := middleware.Chain(
 		middleware.IsAuthed(*deps.AuthSessionService),
+		middleware.RateLimit(deps.RateLimiter, limiter.KeyByAccountID),
 	)
 
 	router.Handle("GET /stats", createMiddleware(handler.getStats()))
@@ -69,7 +80,7 @@ func (stats *StatsHandler) getStats() http.HandlerFunc {
 		if linkID != nil {
 			cacheID = *linkID
 		}
-		cachedStats, _ := GetCachedStat[[]Stats](stats.redis, queries, cacheID)
+		cachedStats, _ := GetCachedStat[[]Stats](stats.redis, queries, strconv.Itoa(int(cacheID)))
 
 		if cachedStats != nil && linkID == nil {
 			stats.responsePkg.Json(&response.JsonOptions{
@@ -118,7 +129,18 @@ func (stats *StatsHandler) getGroupedStatsByDate() http.HandlerFunc {
 		linkID := uint(parsed)
 		queries := parsedTimeQuery([]string{"from", "to"}, req)
 
-		cachedStats, _ := GetCachedStat[[]GetStatByLink](stats.redis, queries, linkID)
+		link, linkErr := stats.linkRepository.GetByID(linkID)
+		if linkErr != nil {
+			stats.responsePkg.Json(&response.JsonOptions{
+				Data:   &errorType.ErrorType{Error: linkErr.Error()},
+				Code:   http.StatusInternalServerError,
+				Writer: w,
+				Reader: req,
+			})
+			return
+		}
+
+		cachedStats, _ := GetCachedStat[[]GetStatByLink](stats.redis, queries, link.Hash)
 
 		if cachedStats != nil {
 			stats.responsePkg.Json(&response.JsonOptions{
@@ -142,7 +164,7 @@ func (stats *StatsHandler) getGroupedStatsByDate() http.HandlerFunc {
 			return
 		}
 
-		SetCachedStat(stats.redis, result, queries, linkID)
+		SetCachedStat(stats.redis, result, queries, link.Hash)
 
 		stats.responsePkg.Json(&response.JsonOptions{
 			Data:   result,

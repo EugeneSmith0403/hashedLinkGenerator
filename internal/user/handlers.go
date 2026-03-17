@@ -7,6 +7,7 @@ import (
 	"link-generator/internal/models"
 	errorType "link-generator/pkg/errorType"
 	"link-generator/pkg/helpers"
+	"link-generator/pkg/limiter"
 	"link-generator/pkg/middleware"
 	"link-generator/pkg/request"
 	"link-generator/pkg/response"
@@ -30,6 +31,8 @@ type UserHandlerDeps struct {
 	SubscriptionService models.ISubscriptionService
 	AuthService         models.IAuthService
 	AuthSeseionService  *authsession.AuthSessionService
+	RateLimiter         *limiter.LimiterService
+	IPRateLimiter       *limiter.LimiterService
 }
 
 type UserHandler struct {
@@ -54,12 +57,13 @@ func NewUserHandlers(router *http.ServeMux, deps UserHandlerDeps) {
 	}
 
 	authMiddleware := middleware.Chain(
-		middleware.IsAuthed(*deps.AuthSeseionService),
+		middleware.IsAuthed(*deps.AuthSeseionService, true),
+		middleware.RateLimit(deps.RateLimiter, limiter.KeyByAccountID),
 	)
 
 	router.Handle("GET /users/me", authMiddleware(handler.handleGetMe()))
 	router.Handle("POST /users/me/2fa/setup", authMiddleware(handler.handleSetup2FA()))
-	router.Handle("POST /users/2fa/verify", handler.handler2FaVerify())
+	router.Handle("POST /users/2fa/verify", middleware.RateLimit(deps.IPRateLimiter, limiter.KeyByIP)(handler.handler2FaVerify()))
 }
 
 func (h *UserHandler) handleGetMe() http.HandlerFunc {

@@ -41,24 +41,28 @@ const nav = computed(() =>
       </div>
 
       <nav class="flex-1 px-3 py-4 space-y-1">
-        <NuxtLink
-          v-for="item in nav"
-          :key="item.to"
-          :to="localePath(item.to)"
-          class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-          exact-active-class="bg-indigo-50 text-indigo-700"
-          inactive-class="text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-        >
-          <svg class="h-5 w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon" />
-          </svg>
-          {{ t(item.labelKey) }}
-        </NuxtLink>
+        <ClientOnly>
+          <NuxtLink
+            v-for="item in nav"
+            :key="item.to"
+            :to="localePath(item.to)"
+            class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+            exact-active-class="bg-indigo-50 text-indigo-700"
+            inactive-class="text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+          >
+            <svg class="h-5 w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon" />
+            </svg>
+            {{ t(item.labelKey) }}
+          </NuxtLink>
+        </ClientOnly>
       </nav>
 
       <div class="px-3 py-4 border-t border-gray-200 space-y-1">
         <div class="px-3 py-2">
-          <p class="text-xs text-gray-400 truncate">{{ auth.email }}</p>
+          <ClientOnly>
+            <p class="text-xs text-gray-400 truncate">{{ auth.email }}</p>
+          </ClientOnly>
         </div>
         <button
           class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-red-50 hover:text-red-700 transition-colors"

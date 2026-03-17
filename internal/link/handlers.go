@@ -9,6 +9,7 @@ import (
 	"link-generator/internal/stats"
 	"link-generator/internal/user"
 	"link-generator/pkg/event"
+	"link-generator/pkg/limiter"
 	"link-generator/pkg/middleware"
 	rabbitmq "link-generator/pkg/rabbitMq"
 	"link-generator/pkg/request"
@@ -28,6 +29,8 @@ type LinkHandlerDeps struct {
 	SubscriptionService middleware.SubChecker
 	RabbitMq            *rabbitmq.RabbitMq
 	StatsService        *stats.StatsService
+	RateLimiter         *limiter.LimiterService
+	IPRateLimiter       *limiter.LimiterService
 }
 
 type LinkHandler struct {
@@ -64,9 +67,11 @@ func NewLinkHandler(router *http.ServeMux, deps LinkHandlerDeps) {
 	// Middlewares
 	authMiddleware := middleware.Chain(
 		middleware.IsAuthed(*deps.AuthSessionService),
+		middleware.RateLimit(deps.RateLimiter, limiter.KeyByAccountID),
 	)
 	createMiddleware := middleware.Chain(
 		middleware.IsAuthed(*deps.AuthSessionService),
+		middleware.RateLimit(deps.RateLimiter, limiter.KeyByAccountID),
 		middleware.HasActiveSubscription(
 			func(email string) (uint, error) {
 				u, err := deps.UserRepository.FindByEmail(email)
@@ -82,7 +87,7 @@ func NewLinkHandler(router *http.ServeMux, deps LinkHandlerDeps) {
 		),
 	)
 
-	router.HandleFunc("GET /{hash}", handler.GetTo())
+	router.Handle("GET /{hash}", middleware.RateLimit(deps.IPRateLimiter, limiter.KeyByIP)(handler.GetTo()))
 	router.Handle("GET /links", authMiddleware(handler.List()))
 	router.Handle("POST /link", createMiddleware(handler.Create()))
 	router.Handle("PATCH /link/{id}", authMiddleware(handler.Update()))

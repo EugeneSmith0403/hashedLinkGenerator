@@ -5,14 +5,15 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 ## Features
 
 - **URL Shortening**: Create and manage shortened links with click tracking
-- **Session-based Auth**: JWT tokens tied to `auth_sessions` (IP, user agent, expiry, active flag)
+- **Session-based Auth**: JWT tokens tied to `auth_sessions` (IP, user agent, expiry, active flag, `is_active` filter on lookup)
 - **Two-Factor Authentication**: TOTP-based 2FA with QR code setup
 - **Subscription Billing**: Stripe integration — plans, payment methods, subscriptions, refunds
 - **Payment History**: Full audit trail of all payments per user
 - **Click Statistics**: Time-range and per-link analytics stored in ClickHouse
 - **Async Event Processing**: RabbitMQ consumers for payment intents, subscriptions, invoices, and click stats
 - **Transactional Email**: SMTP mailer — welcome email on registration, payment confirmation on invoice paid
-- **Redis Caching**: Grouped stats cached per `(linkID, date-range)` with targeted key invalidation on new click events
+- **Redis Caching**: Grouped stats cached per `(linkHash, date-range)` with exact key invalidation via Redis Set tracking
+- **Rate Limiting**: Token-bucket limiter via Redis Lua script — IP-based (auth, redirect) and per-account (authenticated endpoints), `429 Too Many Requests` with configurable capacity and refill rate
 - **GeoIP Country Detection**: MaxMind GeoIP2 lookup for click country metadata
 - **Internationalization**: EN / RU / DE (frontend + email templates)
 
@@ -22,7 +23,7 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 - **Go** (net/http ServeMux)
 - **PostgreSQL** with GORM
 - **ClickHouse** (click analytics — `link_clicks` table, GORM driver)
-- **Redis** (stats caching with targeted key invalidation)
+- **Redis** (stats caching + token-bucket rate limiting)
 - **RabbitMQ** (async event processing via `rabbitmq/amqp091-go`)
 - **Stripe Go SDK** (v84)
 - **golang-jwt/jwt**
@@ -56,8 +57,8 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 ├── configs/                       # Configuration loading
 ├── internal/
 │   ├── account/                   # Stripe customer account management + 2FA service
-│   ├── auth/                      # Registration & login handlers
-│   ├── auth_session/              # Session create/update (token, IP, user agent, is_verify)
+│   ├── auth/                      # Registration & login handlers (account created on register)
+│   ├── auth_session/              # Session create/update (token, IP, user agent, is_verify, is_active)
 │   ├── consts/                    # RabbitMQ exchange/queue/routing constants
 │   ├── consumers/                 # Consumer handler logic (paymentIntent, subscription, invoice, stats)
 │   ├── jwt/                       # JWT service
@@ -82,9 +83,10 @@ A full-stack URL shortener service with subscription billing, built with Go and 
 │   ├── clickhouse/                # ClickHouse connection wrapper
 │   ├── db/                        # PostgreSQL connection
 │   ├── event/                     # In-process event bus
-│   ├── middleware/                # CORS, auth, logging, subscription check
+│   ├── limiter/                   # Token-bucket rate limiter (Redis Lua script, KeyByIP / KeyByAccountID)
+│   ├── middleware/                # CORS, auth, logging, rate limit, subscription check
 │   ├── rabbitMq/                  # RabbitMQ client wrapper
-│   ├── redis/                     # Redis client wrapper (Get/Set/Incr/SAdd/DelByPattern)
+│   ├── redis/                     # Redis client wrapper (Get/Set/Incr/SAdd/SMembers/Del)
 │   ├── request/                   # Body parsing helpers
 │   └── response/                  # JSON response helpers
 ├── migrations/
@@ -271,7 +273,7 @@ Each `link_clicks` row captures:
 
 The `country` field is populated via MaxMind GeoLite2 if `GEOIP_PATH` is configured.
 
-Grouped stats (`GET /stats/link/{id}`) are cached in Redis. Cache key format: `link:{id}:report:{md5}` where the MD5 is derived from the `from`/`to` date-range filter params. On each new click the stats consumer performs a targeted `DEL link:{id}:report:{filterHash}` using the `FilterHash` carried in the event message, replacing the old pattern-based scan.
+Grouped stats (`GET /stats/link/{id}`) are cached in Redis. Cache key format: `link:{linkHash}:report:{md5}` where `linkHash` is the link's unique UUID and the MD5 is derived from the `from`/`to` date-range filter params. Each cached key is tracked in a Redis Set (`link:{linkHash}:filters`). On each new click the stats consumer calls `InvalidateLinkCache` which reads the Set, deletes all tracked report keys individually, then deletes the Set — no pattern scan needed.
 
 ## API Endpoints
 
@@ -279,7 +281,7 @@ Grouped stats (`GET /stats/link/{id}`) are cached in Redis. Cache key format: `l
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/auth/register` | No | Register → `{email, token}` |
+| POST | `/auth/register` | No | Register → creates user + Stripe account + auth session → `{email, token}` |
 | POST | `/auth/login` | No | Login → `{email, token, is2faEnabled}` |
 
 ### User & 2FA
@@ -294,7 +296,6 @@ Grouped stats (`GET /stats/link/{id}`) are cached in Redis. Cache key format: `l
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/account` | Yes | Create Stripe customer account |
 | PATCH | `/account` | Yes | Update account name/email |
 
 ### Links
@@ -356,13 +357,13 @@ Grouped stats (`GET /stats/link/{id}`) are cached in Redis. Cache key format: `l
 
 ### Session Tracking
 
-Every login creates an `auth_sessions` record with token, expiry, IP address, user agent, and `is_verify` flag. The `IsAuthed` middleware validates the session on every protected request.
+Every login and registration creates an `auth_sessions` record with token, expiry, IP address, user agent, `is_verify`, and `is_active` flags. The `IsAuthed` middleware validates the session on every protected request, filtering by `is_active = true`.
 
 ## Stripe Payment Flows
 
 ### Subscription flow
 
-1. `POST /account` — create Stripe customer
+1. `POST /auth/register` — Stripe customer account created automatically on registration
 2. `POST /subscriptions/method` — create SetupIntent, get `clientSecret`
 3. `stripe.confirmCardSetup(clientSecret, {card})` — confirm card on frontend
 4. `POST /subscriptions {planId}` — create subscription
@@ -387,7 +388,7 @@ Every login creates an `auth_sessions` record with token, expiry, IP address, us
 | Route | Description |
 |-------|-------------|
 | `/auth/login` | Login form (with 2FA code step if enabled) |
-| `/auth/register` | Registration form (auto-creates account after signup) |
+| `/auth/register` | Registration form (account created server-side on signup) |
 | `/dashboard` | User's links list with per-link stats drawer |
 | `/billing` | Plans, subscription status, cancel button |
 | `/payments` | Payment history table |
@@ -404,19 +405,13 @@ Every login creates an `auth_sessions` record with token, expiry, IP address, us
 - **Email i18n** — templates live in `internal/locales/` (embedded via `embed.FS`), translated via `go-i18n` + TOML files (EN/RU/DE)
 - **TOTP** — 30-second window, ±5 second skew tolerance, SHA1, 6-digit codes via `pquerna/otp`
 - **ClickHouse table** — `link_clicks` uses `ReplacingMergeTree`, partitioned by month, ordered by `(link_id, clicked_at, request_id)`; deduplication is eventual
-- **Stats cache invalidation** — when the stats consumer inserts into ClickHouse, it calls `redis.Del("link:{id}:report:{filterHash}")` to remove the specific cached report for that link; the `FilterHash` is embedded in the `StatsMessage` payload at redirect time so no pattern scan is needed
+- **Stats cache invalidation** — cache key is `link:{linkHash}:report:{md5(filters)}` using the link's unique UUID hash; each key is registered in a Redis Set `link:{linkHash}:filters` on write; `InvalidateLinkCache` reads the Set, deletes all report keys individually, then drops the Set — exact deletion, no pattern scan
+- **Rate limiting** — token-bucket via Redis Lua script; two limiter instances: IP-based (capacity 100, refill 100/s) for auth and redirect endpoints, account-based for authenticated API endpoints; returns `429 Too Many Requests` on exhaustion
+- **Account creation** — Stripe customer account is created automatically during `POST /auth/register`; the separate `POST /account` endpoint remains for manual account updates
 
 ## Roadmap
 
-### 1. Rate Limiting (RPS)
-
-- Token-bucket limiter via Redis
-- Global IP-based + per-user quotas configurable per plan
-- `429 Too Many Requests` with `Retry-After`
-
----
-
-### 2. Scaling & Monitoring
+### Scaling & Monitoring
 
 - Horizontal scaling with stateless Go instances
 - Prometheus metrics endpoint, OpenTelemetry tracing
