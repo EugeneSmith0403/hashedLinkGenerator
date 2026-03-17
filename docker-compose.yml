@@ -87,3 +87,113 @@ services:
       timeout: 10s
       retries: 5
     restart: unless-stopped
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: postgres_exporter_container
+    environment:
+      DATA_SOURCE_NAME: "postgresql://postgres:my_pass@postgres:5432/link?sslmode=disable"
+    ports:
+      - "9187:9187"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: redis_exporter_container
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+      REDIS_USER: ${REDIS_USER}
+      REDIS_PASSWORD: ${REDIS_USER_PASSWORD}
+    ports:
+      - "9121:9121"
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  rabbitmq-exporter:
+    image: kbudde/rabbitmq-exporter:latest
+    container_name: rabbitmq_exporter_container
+    environment:
+      RABBIT_URL: "http://rabbitmq:15672"
+      RABBIT_USER: ${RABBITMQ_USER}
+      RABBIT_PASSWORD: ${RABBITMQ_PASSWORD}
+      PUBLISH_PORT: "9419"
+      OUTPUT_FORMAT: "prometheus"
+    ports:
+      - "9419:9419"
+    depends_on:
+      - rabbitmq
+    restart: unless-stopped
+
+  clickhouse-exporter:
+    image: f1yegor/clickhouse-exporter:latest
+    container_name: clickhouse_exporter_container
+    command: ["-scrape_uri=http://clickhouse:8123/"]
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    ports:
+      - "9116:9116"
+    depends_on:
+      - clickhouse
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus_container
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki_container
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki/loki.yml:/etc/loki/loki.yml
+      - ./loki-data:/loki
+    command: -config.file=/etc/loki/loki.yml
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail_container
+    volumes:
+      - ./monitoring/promtail/promtail.yml:/etc/promtail/promtail.yml
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/promtail.yml
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana_container
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/dashboard-files:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+      - loki
+    restart: unless-stopped

@@ -1,0 +1,120 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer-payment
+  namespace: link-generator
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: consumer-payment
+  template:
+    metadata:
+      labels:
+        app: consumer-payment
+    spec:
+      containers:
+      - name: consumer-payment
+        image: your-registry/link-generator-consumer-payment:latest
+        imagePullPolicy: Always
+        envFrom:
+        - secretRef:
+            name: app-secrets
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer-subscription
+  namespace: link-generator
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: consumer-subscription
+  template:
+    metadata:
+      labels:
+        app: consumer-subscription
+    spec:
+      containers:
+      - name: consumer-subscription
+        image: your-registry/link-generator-consumer-subscription:latest
+        imagePullPolicy: Always
+        envFrom:
+        - secretRef:
+            name: app-secrets
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer-invoice
+  namespace: link-generator
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: consumer-invoice
+  template:
+    metadata:
+      labels:
+        app: consumer-invoice
+    spec:
+      containers:
+      - name: consumer-invoice
+        image: your-registry/link-generator-consumer-invoice:latest
+        imagePullPolicy: Always
+        envFrom:
+        - secretRef:
+            name: app-secrets
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer-stats
+  namespace: link-generator
+spec:
+  replicas: 2                # stats may need more replicas under load — see HPA
+  selector:
+    matchLabels:
+      app: consumer-stats
+  template:
+    metadata:
+      labels:
+        app: consumer-stats
+    spec:
+      containers:
+      - name: consumer-stats
+        image: your-registry/link-generator-consumer-stats:latest
+        imagePullPolicy: Always
+        envFrom:
+        - secretRef:
+            name: app-secrets
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"

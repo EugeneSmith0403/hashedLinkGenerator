@@ -1,0 +1,112 @@
+{
+  "title": "Server Overview",
+  "uid": "server-overview",
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request Rate (req/s)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(http_requests_total[1m])) by (method, path)",
+          "legendFormat": "{{method}} {{path}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Error Rate (5xx)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(http_requests_total{status=~\"5..\"}[1m])) by (path)",
+          "legendFormat": "{{path}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Latency p50 / p95 / p99",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[1m])) by (le, path))",
+          "legendFormat": "p50 {{path}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[1m])) by (le, path))",
+          "legendFormat": "p95 {{path}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[1m])) by (le, path))",
+          "legendFormat": "p99 {{path}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "PostgreSQL Query Duration p99",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.99, sum(rate(pg_query_duration_seconds_bucket[1m])) by (le, operation))",
+          "legendFormat": "p99 {{operation}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "PostgreSQL Connections",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "go_sql_open_connections{db_name=\"link_generator\"}",
+          "legendFormat": "open"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "go_sql_in_use_connections{db_name=\"link_generator\"}",
+          "legendFormat": "in use"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "go_sql_idle_connections{db_name=\"link_generator\"}",
+          "legendFormat": "idle"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Application Logs",
+      "type": "logs",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+      "options": {
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{service=\"server\"}",
+          "legendFormat": ""
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,228 @@
+---
+# ─── PostgreSQL Exporter ────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-exporter
+  namespace: link-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-exporter
+  template:
+    metadata:
+      labels:
+        app: postgres-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9187"
+    spec:
+      containers:
+      - name: postgres-exporter
+        image: prometheuscommunity/postgres-exporter:latest
+        ports:
+        - containerPort: 9187
+        env:
+        - name: DATA_SOURCE_NAME
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: DSN
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "32Mi"
+          limits:
+            cpu: "100m"
+            memory: "64Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-exporter
+  namespace: link-generator
+spec:
+  selector:
+    app: postgres-exporter
+  ports:
+  - port: 9187
+    targetPort: 9187
+---
+# ─── Redis Exporter ─────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  namespace: link-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9121"
+    spec:
+      containers:
+      - name: redis-exporter
+        image: oliver006/redis_exporter:latest
+        ports:
+        - containerPort: 9121
+        env:
+        - name: REDIS_ADDR
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: REDIS_ADDR
+        - name: REDIS_USER
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: REDIS_USER
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: REDIS_USER_PASSWORD
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "32Mi"
+          limits:
+            cpu: "100m"
+            memory: "64Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-exporter
+  namespace: link-generator
+spec:
+  selector:
+    app: redis-exporter
+  ports:
+  - port: 9121
+    targetPort: 9121
+---
+# ─── RabbitMQ Exporter ──────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq-exporter
+  namespace: link-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq-exporter
+  template:
+    metadata:
+      labels:
+        app: rabbitmq-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9419"
+    spec:
+      containers:
+      - name: rabbitmq-exporter
+        image: kbudde/rabbitmq-exporter:latest
+        ports:
+        - containerPort: 9419
+        env:
+        - name: RABBIT_URL
+          value: "http://rabbitmq:15672"
+        - name: RABBIT_USER
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: RABBITMQ_USER
+        - name: RABBIT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: RABBITMQ_PASSWORD
+        - name: PUBLISH_PORT
+          value: "9419"
+        - name: OUTPUT_FORMAT
+          value: "prometheus"
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "32Mi"
+          limits:
+            cpu: "100m"
+            memory: "64Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq-exporter
+  namespace: link-generator
+spec:
+  selector:
+    app: rabbitmq-exporter
+  ports:
+  - port: 9419
+    targetPort: 9419
+---
+# ─── ClickHouse Exporter ────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clickhouse-exporter
+  namespace: link-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clickhouse-exporter
+  template:
+    metadata:
+      labels:
+        app: clickhouse-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9116"
+    spec:
+      containers:
+      - name: clickhouse-exporter
+        image: f1yegor/clickhouse-exporter:latest
+        ports:
+        - containerPort: 9116
+        args:
+          - "-scrape_uri=http://clickhouse:8123/"
+        env:
+        - name: CLICKHOUSE_USER
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: CLICKHOUSE_USER
+        - name: CLICKHOUSE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: CLICKHOUSE_PASSWORD
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "32Mi"
+          limits:
+            cpu: "100m"
+            memory: "64Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse-exporter
+  namespace: link-generator
+spec:
+  selector:
+    app: clickhouse-exporter
+  ports:
+  - port: 9116
+    targetPort: 9116

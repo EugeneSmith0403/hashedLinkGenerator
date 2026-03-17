@@ -42,6 +42,7 @@ import (
 
 	"github.com/braintree/manners"
 	goRedis "github.com/go-redis/redis/v8"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	stripeGo "github.com/stripe/stripe-go/v84"
 )
 
@@ -95,6 +96,7 @@ func newTestHandler(cfg *configs.Config) http.Handler {
 
 func newApp(cfg *configs.Config) *app {
 	database := db.NewDb(cfg)
+	database.RegisterMetrics()
 	eventBus := event.NewEventBus()
 	rabbitMq := rabbitmq.NewRabbitMq(cfg.RabbitMq)
 
@@ -210,6 +212,7 @@ func (a *subscriptionUserAdapter) GetSubscriptionByUserID(userID uint) (*models.
 }
 
 func (a *app) registerHandlers(router *http.ServeMux) {
+	router.Handle("GET /metrics", promhttp.Handler())
 	router.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 
 	auth.NewAuthHandlers(router, auth.AuthHandlerDeps{
@@ -321,7 +324,7 @@ func main() {
 
 	router := http.NewServeMux()
 	a.registerHandlers(router)
-	handler := middleware.Chain(middleware.Cors, middleware.Logging)(router)
+	handler := middleware.Chain(middleware.Cors, middleware.Logging, middleware.Metrics)(router)
 
 	server := manners.NewWithServer(&http.Server{
 		Addr:    ":8081",

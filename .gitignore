@@ -1,11 +1,31 @@
-/postgres-data
-/postgres-data-test
-/redis-data
-/clickhouse-data
-/.env
-/.vscode
-/.claude
-/cmd/.env.test
+# Environment
+.env
+.env.*
+!.env.example
+cmd/.env.test
+
+# IDE
+.vscode
+.idea
+.claude
+
+# Go binaries
+/server
+/consumers
+/cmd/gen_webhook_sig
+/cmd/gen_webhook_sig/main.go
+
+# Docker data volumes
+postgres-data/
+postgres-data-test/
+redis-data/
+clickhouse-data/
+rabbitmq-data/
+prometheus-data/
+loki-data/
+grafana-data/
+
+# Frontend
 frontend/**/node_modules/
 frontend/**/dist/
 frontend/**/.vite/
@@ -14,8 +34,10 @@ frontend/**/.output/
 frontend/.env
 frontend/.env.local
 frontend/.env.*.local
-/.claude
-/cmd/gen_webhook_sig
-/cmd/gen_webhook_sig/main.go
-/rabbitmq-data
-/consumers
+
+# GeoIP database
+*.mmdb
+
+# OS
+.DS_Store
+Thumbs.db
